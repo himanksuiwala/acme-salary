@@ -1,6 +1,10 @@
 # Employee Salary Management
 
-This starter connects a FastAPI backend, a SQLite database, and a Vite React/TypeScript frontend. The [requirements](artifacts/requirements.md) and [database design](artifacts/db-schema-design.md) describe the planned salary-management features. The backend creates the ten designed tables and exposes health, employee directory, compensation detail, and versioned compensation update endpoints.
+This starter connects a FastAPI backend, a SQLite database, and a Vite React/TypeScript frontend. The [requirements](artifacts/requirements.md) and [database design](artifacts/db-schema-design.md) describe the planned salary-management features. The app includes a live employee directory, employee creation, CSV directory export, and compensation detail. The backend also supports versioned compensation updates through its API.
+
+The [product UX specification](specs/product-ux-spec.md) describes the target screens, access model, salary and analytics rules, and end-to-end HR workflows. It also identifies which experiences are not yet implemented.
+
+The [interface design system](design.md) defines the visual and component direction for those screens: Inter, Phosphor icons, shadcn/ui and Coss UI components, and a Tailwind Neutral palette.
 
 ## Requirements
 
@@ -45,7 +49,7 @@ Start the web app in another terminal:
 npm --prefix frontend run dev
 ```
 
-Open the local URL printed by Vite. The page calls `/api/health` through Vite's development proxy. A successful check returns `{"status":"ok","database":"ok"}` after SQLite executes a query. If SQLite cannot be reached, the API returns HTTP 503 and the page shows the database as unavailable. FastAPI's interactive API documentation is at <http://127.0.0.1:8000/docs>.
+Open the local URL printed by Vite. The employee directory calls the API through Vite's development proxy. Its filters, pagination, employee details, creation form, and CSV export use live database records. The screen shows an error and retry control when a request fails. FastAPI's interactive API documentation is at <http://127.0.0.1:8000/docs>.
 
 Run the database checks with `backend/.venv/bin/python -m unittest discover -s backend/tests -v`.
 
@@ -53,7 +57,10 @@ Run the database checks with `backend/.venv/bin/python -m unittest discover -s b
 
 The API exposes:
 
-- `GET /api/employees` with optional `search`, `country`, `department`, `role`, `status`, `page`, and `page_size` query parameters. Search matches partial names and employee codes without case sensitivity. Country and department use codes; `role` means employee job title. Filters combine with AND. Results are ordered by employee code, with 20 items per page by default and a maximum of 100.
+- `GET /api/employees` with optional `search`, `country`, `department`, `role`, `status`, `package_state`, `page`, and `page_size` query parameters. Search matches partial names and employee codes without case sensitivity. Country and department use codes; `role` means employee job title. Filters combine with AND. Results are ordered by employee code, with 20 items per page by default and a maximum of 100. Each row includes the current base pay, currency, pay frequency, package state, and next effective date when available. Package states are `CURRENT`, `SCHEDULED_CHANGE`, `SCHEDULED`, `PAST_ONLY`, and `NO_PACKAGE`.
+- `GET /api/employees/directory-options` for country, department, location, role, status, and package-state filter and form options.
+- `POST /api/employees` to create a basic employee record. Required fields are code, first and last name, email, department code, location ID, and joining date. The response wraps the created employee summary in `employee`; duplicate codes or emails return 409, while invalid references or payloads return 422. Creation and its audit record commit together.
+- `GET /api/employees/export` accepts the directory filters and returns a CSV of **all matching rows**, not only the displayed page. Current base pay is exported as integer minor units. Text cells are protected against spreadsheet formula execution, and the export writes an audit event.
 - `GET /api/employees/{employee_id}/compensation` with the employee summary, package effective today (UTC), past packages, scheduled packages, and each package's allowances.
 - `POST /api/employees/{employee_id}/compensation` to create a complete new package with `base_pay`, optional `variable_pay`, `currency_code`, `pay_frequency`, `effective_from`, `reason`, and the full desired `allowances` list. Amounts are integer minor units. Old pay and allowances remain in history; the prior period is closed if necessary. The write and audit event commit together.
 
@@ -64,7 +71,7 @@ curl 'http://127.0.0.1:8000/api/employees?country=IN&page=1&page_size=20'
 curl 'http://127.0.0.1:8000/api/employees/1/compensation'
 ```
 
-**Local development only:** These salary endpoints have no authentication or authorization. Successful changes are temporarily attributed to the seeded `Admin@acme.org` user for auditing; this does not identify the actual caller. The intended human access role is `NORMAL_USER` for HR platform users; `SYSTEM` is reserved for automated configuration work. Add real authentication and role enforcement before exposing this API beyond a local development environment.
+**Local development only:** These salary endpoints, including export, have no authentication or authorization. Successful changes and exports are temporarily attributed to the seeded `Admin@acme.org` user for auditing; this does not identify the actual caller. The intended human access role is `NORMAL_USER` for HR platform users; `SYSTEM` is reserved for automated configuration work. Add real authentication, role and country-scope enforcement, and caller-specific audit attribution before exposing this API beyond a local development environment.
 
 ## Spec-driven workflow
 
@@ -114,6 +121,6 @@ All modes default to Faker seed `42` and an as-of date of `2026-10-01`; use `--s
 
 ```text
 backend/   FastAPI app, SQLite schema and initialization, virtual environment
-frontend/  Vite React/TypeScript app with shadcn/ui (Radix base)
+frontend/  Vite React/TypeScript app with Coss components for the directory
 artifacts/ Requirements and database design
 ```
