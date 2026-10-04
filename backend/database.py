@@ -41,8 +41,8 @@ def database_path() -> Path:
     return configured_path if configured_path.is_absolute() else BASE_DIR / configured_path
 
 
-def connect_database() -> sqlite3.Connection:
-    path = database_path()
+def connect_database(path: Path | None = None) -> sqlite3.Connection:
+    path = path or database_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path)
     connection.execute("PRAGMA foreign_keys = ON")
@@ -100,9 +100,10 @@ def _create_timestamp_triggers(connection: sqlite3.Connection) -> None:
         )
 
 
-def initialize_database() -> Path:
+def initialize_database(path: Path | None = None) -> Path:
     """Create or migrate the schema and seed the two application actors."""
-    with closing(connect_database()) as connection:
+    path = path or database_path()
+    with closing(connect_database(path)) as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         if version not in (0, 1, 2, 3):
             raise RuntimeError(f"Unsupported database schema version: {version}")
@@ -143,4 +144,4 @@ def initialize_database() -> Path:
                 ],
             )
 
-    return database_path()
+    return path
