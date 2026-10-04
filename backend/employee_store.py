@@ -35,7 +35,7 @@ JOIN country c ON c.country_id = l.country_id
 
 EMPLOYEE_COLUMNS = """
 e.employee_id, e.employee_code, e.first_name, e.last_name, e.email,
-e.job_title, e.status, e.joining_date,
+e.job_title, e.employment_type, e.status, e.joining_date, e.termination_date, e.manager_id,
 d.department_code, d.department_name,
 l.location_id, l.location_name, l.city,
 c.country_code, c.country_name
@@ -59,7 +59,10 @@ def _employee_summary(row: sqlite3.Row) -> dict:
         "last_name": row["last_name"],
         "email": row["email"],
         "job_title": row["job_title"],
+        "employment_type": row["employment_type"],
         "status": row["status"],
+        "joining_date": row["joining_date"],
+        "termination_date": row["termination_date"],
         "department": {"code": row["department_code"], "name": row["department_name"]},
         "location": {
             "id": row["location_id"], "name": row["location_name"], "city": row["city"]
@@ -188,7 +191,10 @@ def list_employees(*, search: str | None, country: str | None, department: str |
 def get_directory_options() -> dict:
     with closing(_connect()) as connection:
         countries = connection.execute(
-            "SELECT country_code AS code, country_name AS name FROM country ORDER BY country_name"
+            """SELECT c.country_code AS code, c.country_name AS name,
+                      cu.currency_code AS default_currency_code
+               FROM country c JOIN currency cu ON cu.currency_id = c.default_currency_id
+               ORDER BY c.country_name"""
         ).fetchall()
         departments = connection.execute(
             "SELECT department_code AS code, department_name AS name FROM department ORDER BY department_name"
@@ -205,12 +211,20 @@ def get_directory_options() -> dict:
         statuses = connection.execute(
             "SELECT DISTINCT status FROM employee ORDER BY status"
         ).fetchall()
+        currencies = connection.execute(
+            "SELECT currency_code AS code, currency_name AS name, symbol, decimal_places FROM currency ORDER BY currency_code"
+        ).fetchall()
+        allowance_types = connection.execute(
+            "SELECT code, name FROM allowance_type ORDER BY name"
+        ).fetchall()
     return {
         "countries": [dict(row) for row in countries],
         "departments": [dict(row) for row in departments],
         "locations": [dict(row) for row in locations],
         "roles": [row[0] for row in roles],
         "statuses": [row[0] for row in statuses],
+        "currencies": [dict(row) for row in currencies],
+        "allowance_types": [dict(row) for row in allowance_types],
         "package_states": ["CURRENT", "SCHEDULED_CHANGE", "SCHEDULED", "PAST_ONLY", "NO_PACKAGE"],
     }
 
@@ -273,6 +287,56 @@ def create_employee(payload: dict) -> dict:
             connection.rollback()
             raise
     return _employee_summary(employee)
+
+
+def update_employee(employee_id: int, payload: dict) -> dict:
+    with closing(_connect()) as connection:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            before = _employee(connection, employee_id)
+            if before is None:
+                raise EmployeeNotFound
+            if payload["termination_date"] and payload["termination_date"] < date.fromisoformat(before["joining_date"]):
+                raise InvalidReference("Termination date cannot precede joining date")
+            department = connection.execute(
+                "SELECT department_id FROM department WHERE upper(department_code) = upper(?)",
+                (payload["department_code"],),
+            ).fetchone()
+            location = connection.execute(
+                "SELECT location_id FROM location WHERE location_id = ?", (payload["location_id"],)
+            ).fetchone()
+            if department is None or location is None:
+                raise InvalidReference("Unknown department or location")
+            old_summary = _employee_summary(before)
+            connection.execute(
+                """UPDATE employee SET first_name = ?, last_name = ?, email = ?, job_title = ?,
+                   employment_type = ?, department_id = ?, location_id = ?, status = ?, termination_date = ?
+                   WHERE employee_id = ?""",
+                (payload["first_name"], payload["last_name"], payload["email"], payload["job_title"],
+                 payload["employment_type"], department["department_id"], location["location_id"],
+                 payload["status"], payload["termination_date"].isoformat() if payload["termination_date"] else None,
+                 employee_id),
+            )
+            updated = _employee(connection, employee_id)
+            new_summary = _employee_summary(updated)
+            actor = connection.execute(
+                "SELECT user_id FROM app_user WHERE username = 'Admin@acme.org'"
+            ).fetchone()
+            if actor is None:
+                raise InvalidReference("Development audit actor is unavailable")
+            connection.execute(
+                """INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_values, new_values)
+                   VALUES (?, 'EMPLOYEE_UPDATED', 'employee', ?, ?, ?)""",
+                (actor["user_id"], employee_id, json.dumps(old_summary), json.dumps(new_summary)),
+            )
+            connection.commit()
+            return new_summary
+        except sqlite3.IntegrityError as error:
+            connection.rollback()
+            raise EmployeeConflict("Email already belongs to another employee") from error
+        except Exception:
+            connection.rollback()
+            raise
 
 
 def export_directory(*, search: str | None, country: str | None,
@@ -379,22 +443,92 @@ def _packages(connection: sqlite3.Connection, employee_id: int) -> list[dict]:
     } for row in rows]
 
 
-def get_compensation_detail(employee_id: int) -> dict:
-    today = datetime.now(timezone.utc).date().isoformat()
+def get_compensation_detail(employee_id: int, as_of: date | None = None) -> dict:
+    selected_date = as_of or datetime.now(timezone.utc).date()
+    selected = selected_date.isoformat()
     with closing(_connect()) as connection:
         employee = _employee(connection, employee_id)
         if employee is None:
             raise EmployeeNotFound
         packages = _packages(connection, employee_id)
+        manager = None
+        if employee["manager_id"] is not None:
+            manager_row = connection.execute(
+                "SELECT employee_id, employee_code, first_name, last_name FROM employee WHERE employee_id = ?",
+                (employee["manager_id"],),
+            ).fetchone()
+            if manager_row is not None:
+                manager = dict(manager_row)
+        events = connection.execute(
+            """SELECT a.audit_id, a.action, a.created_at, a.new_values, u.username AS actor
+               FROM audit_log a LEFT JOIN app_user u ON u.user_id = a.user_id
+               WHERE (a.entity_type = 'employee' AND a.entity_id = ?)
+                  OR (a.entity_type = 'employee_compensation' AND a.entity_id IN
+                      (SELECT id FROM employee_compensation WHERE employee_id = ?))
+               ORDER BY a.created_at DESC, a.audit_id DESC LIMIT 20""",
+            (employee_id, employee_id),
+        ).fetchall()
     current = next((package for package in packages
-                    if package["effective_from"] <= today
-                    and (package["effective_to"] is None or today <= package["effective_to"])), None)
+                    if package["effective_from"] <= selected
+                    and (package["effective_to"] is None or selected <= package["effective_to"])), None)
     history = [package for package in packages
-               if package["effective_to"] is not None and package["effective_to"] < today]
-    scheduled = sorted((package for package in packages if package["effective_from"] > today),
+               if package["effective_to"] is not None and package["effective_to"] < selected]
+    scheduled = sorted((package for package in packages if package["effective_from"] > selected),
                        key=lambda package: package["effective_from"])
-    return {"employee": _employee_summary(employee), "current": current,
-            "history": history, "scheduled": scheduled}
+    activity = []
+    for event in events:
+        try:
+            values = json.loads(event["new_values"]) if event["new_values"] else {}
+        except json.JSONDecodeError:
+            values = {}
+        if not isinstance(values, dict):
+            values = {}
+        package_values = values.get("package")
+        activity.append({
+            "id": event["audit_id"], "action": event["action"],
+            "created_at": event["created_at"], "actor": event["actor"],
+            "reason": values.get("reason"),
+            "effective_from": package_values.get("effective_from") if isinstance(package_values, dict) else None,
+        })
+    summary = _employee_summary(employee)
+    summary["manager"] = manager
+    return {"employee": summary, "as_of": selected, "current": current,
+            "history": history, "scheduled": scheduled, "activity": activity}
+
+
+def export_employee_compensation(employee_id: int, as_of: date | None = None) -> str:
+    detail = get_compensation_detail(employee_id, as_of)
+    employee = detail["employee"]
+    packages = [*detail["history"], *([detail["current"]] if detail["current"] else []), *detail["scheduled"]]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(("employee_code", "employee_name", "as_of_utc", "package_id", "effective_from",
+                     "effective_to", "base_pay_minor_units", "variable_pay_minor_units", "currency_code",
+                     "pay_frequency", "allowance_type", "allowance_minor_units", "allowance_frequency", "reason"))
+    def safe(value):
+        content = "" if value is None else str(value)
+        return "'" + content if content.lstrip().startswith(("=", "+", "-", "@")) else content
+    for package in sorted(packages, key=lambda item: (item["effective_from"], item["id"])):
+        for allowance in package["allowances"] or [None]:
+            writer.writerow((safe(employee["employee_code"]), safe(employee["first_name"] + " " + employee["last_name"]),
+                             detail["as_of"], package["id"], package["effective_from"], package["effective_to"] or "",
+                             package["base_pay"], package["variable_pay"] if package["variable_pay"] is not None else "",
+                             package["currency"]["code"], package["pay_frequency"],
+                             safe(allowance["type_name"]) if allowance else "", allowance["amount"] if allowance else "",
+                             allowance["frequency"] if allowance else "", safe(package["change_reason"])))
+    with closing(_connect()) as connection:
+        with connection:
+            actor = connection.execute(
+                "SELECT user_id FROM app_user WHERE username = 'Admin@acme.org'"
+            ).fetchone()
+            if actor is None:
+                raise InvalidReference("Development audit actor is unavailable")
+            connection.execute(
+                """INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_values)
+                   VALUES (?, 'DATA_EXPORTED', 'employee', ?, ?)""",
+                (actor["user_id"], employee_id, json.dumps({"as_of": detail["as_of"], "package_count": len(packages)})),
+            )
+    return output.getvalue()
 
 
 def create_compensation(employee_id: int, payload: dict) -> dict:

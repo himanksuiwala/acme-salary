@@ -155,7 +155,7 @@ class EmployeeApiTests(unittest.TestCase):
         self.assertEqual(request("GET", "/api/employees", query="package_state=invalid")[0], 422)
 
         options = request("GET", "/api/employees/directory-options")[1]
-        self.assertIn({"code": "GB", "name": "United Kingdom"}, options["countries"])
+        self.assertIn({"code": "GB", "name": "United Kingdom", "default_currency_code": "GBP"}, options["countries"])
         self.assertIn({"code": "HR", "name": "Human Resources"}, options["departments"])
         self.assertIn("Engineer", options["roles"])
         self.assertEqual(len(options["locations"]), 2)
@@ -230,6 +230,47 @@ class EmployeeApiTests(unittest.TestCase):
         self.assertIsNone(empty["current"])
         self.assertEqual(empty["history"], [])
         self.assertEqual(request("GET", "/api/employees/999/compensation")[0], 404)
+
+    def test_profile_as_of_reclassifies_packages_and_exposes_stored_identity(self):
+        prior_date = (self.today - timedelta(days=3)).isoformat()
+        status, detail = request("GET", "/api/employees/1/compensation", query=f"as_of={prior_date}")
+        self.assertEqual(status, 200)
+        self.assertEqual(detail["as_of"], prior_date)
+        self.assertEqual(detail["current"]["base_pay"], 7000000)
+        self.assertEqual(len(detail["history"]), 0)
+        self.assertEqual(len(detail["scheduled"]), 1)
+        self.assertEqual(detail["employee"]["joining_date"], "2020-01-01")
+        self.assertIsNone(detail["employee"]["manager"])
+        self.assertEqual(detail["activity"], [])
+        self.assertEqual(request("GET", "/api/employees/1/compensation", query="as_of=bad")[0], 422)
+
+    def test_profile_export_contains_all_versions_and_is_audited(self):
+        self.assertEqual(request("POST", "/api/employees/1/compensation", body=self.new_package())[0], 201)
+        detail = request("GET", "/api/employees/1/compensation")[1]
+        self.assertEqual(detail["activity"][0]["reason"], "Annual review")
+        status, content = request("GET", "/api/employees/1/compensation/export", raw=True)
+        self.assertEqual(status, 200)
+        self.assertIn("as_of_utc", content)
+        self.assertIn("Annual review", content)
+        self.assertIn("9000000", content)
+        self.assertEqual(self.connection.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'DATA_EXPORTED' AND entity_type = 'employee' AND entity_id = 1"
+        ).fetchone()[0], 1)
+
+    def test_employee_edit_updates_profile_and_audits(self):
+        payload = {
+            "first_name": "Ana", "last_name": "Patel", "email": "ana.patel@example.org",
+            "department_code": "ENG", "location_id": 2, "job_title": "Senior Engineer",
+            "employment_type": "FULL_TIME", "termination_date": None, "status": "ACTIVE",
+        }
+        status, result = request("PATCH", "/api/employees/1", body=payload)
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result["employee"]["last_name"], "Patel")
+        detail = request("GET", "/api/employees/1/compensation")[1]
+        self.assertEqual(detail["employee"]["country"]["code"], "GB")
+        self.assertEqual(detail["activity"][0]["action"], "EMPLOYEE_UPDATED")
+        self.assertEqual(request("PATCH", "/api/employees/1", body={**payload, "termination_date": "2019-01-01"})[0], 422)
+        self.assertEqual(request("PATCH", "/api/employees/1", body={**payload, "email": "person2@example.org"})[0], 409)
 
     def test_create_package_preserves_history_allowances_and_audit(self):
         status, result = request("POST", "/api/employees/1/compensation", body=self.new_package())

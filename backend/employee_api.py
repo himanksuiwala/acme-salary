@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator, model
 
 from backend.employee_store import (
     CompensationConflict, EmployeeConflict, EmployeeNotFound, InvalidReference,
-    create_compensation, create_employee, export_directory, get_compensation_detail,
-    get_directory_options, list_employees,
+    create_compensation, create_employee, export_directory, export_employee_compensation, get_compensation_detail,
+    get_directory_options, list_employees, update_employee,
 )
 
 
@@ -88,6 +88,23 @@ class EmployeeInput(BaseModel):
         return self
 
 
+class EmployeeEditInput(BaseModel):
+    first_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    last_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    email: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254)]
+    department_code: Code
+    location_id: Annotated[int, Field(strict=True, ge=1)]
+    job_title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=150)] | None = None
+    employment_type: Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)] | None = None
+    termination_date: date | None = None
+    status: Literal["ACTIVE", "ON_LEAVE", "NOTICE_PERIOD", "TERMINATED", "INACTIVE"]
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value: str) -> str:
+        return EmployeeInput.valid_email(value)
+
+
 @router.get(
     "/employees",
     description="Local development only: no authentication or authorization is implemented.",
@@ -143,15 +160,46 @@ def add_employee(payload: EmployeeInput) -> dict:
     return {"employee": employee}
 
 
+@router.patch(
+    "/employees/{employee_id}",
+    description="Local development only: employee edits use a fixed audit actor.",
+)
+def edit_employee(payload: EmployeeEditInput, employee_id: int = Path(ge=1)) -> dict:
+    try:
+        employee = update_employee(employee_id, payload.model_dump())
+    except EmployeeNotFound as error:
+        raise HTTPException(status_code=404, detail="Employee not found") from error
+    except InvalidReference as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except EmployeeConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {"employee": employee}
+
+
 @router.get(
     "/employees/{employee_id}/compensation",
     description="Local development only: salary data has no authentication or authorization.",
 )
-def employee_compensation(employee_id: int = Path(ge=1)) -> dict:
+def employee_compensation(employee_id: int = Path(ge=1), as_of: date | None = None) -> dict:
     try:
-        return get_compensation_detail(employee_id)
+        return get_compensation_detail(employee_id, as_of)
     except EmployeeNotFound as error:
         raise HTTPException(status_code=404, detail="Employee not found") from error
+
+
+@router.get(
+    "/employees/{employee_id}/compensation/export",
+    description="Local development only: employee compensation exports use a fixed audit actor.",
+)
+def export_compensation(employee_id: int = Path(ge=1), as_of: date | None = None) -> Response:
+    try:
+        content = export_employee_compensation(employee_id, as_of)
+    except EmployeeNotFound as error:
+        raise HTTPException(status_code=404, detail="Employee not found") from error
+    return Response(content=content, media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": f'attachment; filename="employee-{employee_id}-compensation.csv"',
+        "Cache-Control": "no-store",
+    })
 
 
 @router.post(
