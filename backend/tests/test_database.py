@@ -44,7 +44,7 @@ class DatabaseSchemaTests(unittest.TestCase):
             )
         }
         self.assertEqual(tables, EXPECTED_TABLES)
-        self.assertEqual(self.connection.execute("PRAGMA user_version").fetchone()[0], 3)
+        self.assertEqual(self.connection.execute("PRAGMA user_version").fetchone()[0], 4)
         for table in EXPECTED_TABLES:
             columns = {row[1] for row in self.connection.execute(f"PRAGMA table_info({table})")}
             self.assertTrue({"created_at", "updated_at"} <= columns, table)

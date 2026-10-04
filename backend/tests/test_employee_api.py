@@ -14,7 +14,7 @@ from backend.main import app
 
 
 def request(method: str, path: str, *, query: str = "", body: dict | None = None,
-            raw: bool = False):
+            raw: bool = False, headers: list | None = None):
     payload = json.dumps(body).encode() if body is not None else b""
     messages = []
     sent = False
@@ -34,7 +34,7 @@ def request(method: str, path: str, *, query: str = "", body: dict | None = None
         "method": method, "scheme": "http", "server": ("test", 80),
         "client": ("127.0.0.1", 12345), "path": path,
         "raw_path": path.encode(), "query_string": query.encode(),
-        "headers": [(b"content-type", b"application/json")],
+        "headers": [(b"content-type", b"application/json"), *(headers or [])],
     }
     asyncio.run(app(scope, receive, send))
     status = next(message["status"] for message in messages if message["type"] == "http.response.start")
@@ -166,7 +166,7 @@ class EmployeeApiTests(unittest.TestCase):
         self.assertIn("8000000,USD,ANNUAL", csv_text)
         self.assertEqual(csv_text.count("EMP001"), 1)
         self.assertEqual(self.connection.execute(
-            "SELECT COUNT(*) FROM audit_log WHERE action = 'DATA_EXPORTED'"
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'EXPORT_COMPLETED' AND entity_type = 'export'"
         ).fetchone()[0], 1)
 
         with self.connection:
@@ -193,7 +193,7 @@ class EmployeeApiTests(unittest.TestCase):
         self.assertEqual(request("POST", "/api/employees", body={**payload, "employee_code": "EMP028",
                                                                     "email": "bad"})[0], 422)
         self.assertEqual(self.connection.execute(
-            "SELECT COUNT(*) FROM audit_log WHERE action = 'EMPLOYEE_CREATED'"
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'EMPLOYEE_CREATED' AND outcome = 'SUCCESS'"
         ).fetchone()[0], 1)
 
     def test_large_directory_has_bounded_stable_pages(self):
@@ -254,7 +254,7 @@ class EmployeeApiTests(unittest.TestCase):
         self.assertIn("Annual review", content)
         self.assertIn("9000000", content)
         self.assertEqual(self.connection.execute(
-            "SELECT COUNT(*) FROM audit_log WHERE action = 'DATA_EXPORTED' AND entity_type = 'employee' AND entity_id = 1"
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'EXPORT_COMPLETED' AND entity_type = 'employee' AND entity_id = 1"
         ).fetchone()[0], 1)
 
     def test_employee_edit_updates_profile_and_audits(self):
@@ -297,7 +297,7 @@ class EmployeeApiTests(unittest.TestCase):
                          (self.today + timedelta(days=30)).isoformat())
         self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM employee_compensation WHERE employee_id=1").fetchone()[0], 3)
         actor, reason = self.connection.execute(
-            "SELECT u.username, json_extract(a.new_values, '$.reason') FROM audit_log a JOIN app_user u ON u.user_id=a.user_id"
+            "SELECT u.username, a.reason FROM audit_log a JOIN app_user u ON u.user_id=a.user_id"
         ).fetchone()
         self.assertEqual((actor, reason), ("Admin@acme.org", "Annual review"))
 
@@ -318,14 +318,16 @@ class EmployeeApiTests(unittest.TestCase):
             (self.new_package(effective_from=(self.today - timedelta(days=2)).isoformat()), 409),
         ]
         before = [self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-                  for table in ("employee_compensation", "employee_allowance", "audit_log")]
+                  for table in ("employee_compensation", "employee_allowance")]
         for body, expected in bad_cases:
             with self.subTest(body=body):
                 self.assertEqual(request("POST", "/api/employees/1/compensation", body=body)[0], expected)
         self.assertEqual(request("POST", "/api/employees/999/compensation", body=self.new_package())[0], 404)
         after = [self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-                 for table in ("employee_compensation", "employee_allowance", "audit_log")]
+                 for table in ("employee_compensation", "employee_allowance")]
         self.assertEqual(before, after)
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM audit_log WHERE outcome='FAILED'").fetchone()[0], len(bad_cases)+1)
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM audit_log WHERE old_values IS NOT NULL OR new_values IS NOT NULL").fetchone()[0], 0)
         self.assertIsNone(self.connection.execute("SELECT effective_to FROM employee_compensation WHERE id=2").fetchone()[0])
 
     def test_first_package_and_same_date_conflict(self):

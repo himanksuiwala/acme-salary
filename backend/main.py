@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 
 from backend.database import connect_database, initialize_database
 from backend.employee_api import router as employee_router
+from backend.audit_api import router as audit_router
+from backend.audit_http import AuditMiddleware
 
 
 @asynccontextmanager
@@ -17,7 +19,9 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Employee Salary Management API", lifespan=lifespan)
+app.add_middleware(AuditMiddleware)
 app.include_router(employee_router)
+app.include_router(audit_router)
 
 
 @app.get("/api/health", response_model=None)

@@ -2,12 +2,12 @@
 
 import csv
 import io
-import json
 import sqlite3
 from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 
 from backend.database import connect_database
+from backend.audit import audited, package_fields, record_event, request_export
 
 
 class EmployeeNotFound(Exception):
@@ -229,6 +229,7 @@ def get_directory_options() -> dict:
     }
 
 
+@audited('EMPLOYEE_CREATED', 'employee')
 def create_employee(payload: dict) -> dict:
     with closing(_connect()) as connection:
         try:
@@ -264,21 +265,10 @@ def create_employee(payload: dict) -> dict:
                  payload["status"]),
             )
             employee_id = cursor.lastrowid
-            actor = connection.execute(
-                "SELECT user_id FROM app_user WHERE username = 'Admin@acme.org'"
-            ).fetchone()
-            if actor is None:
-                raise InvalidReference("Development audit actor is unavailable")
-            connection.execute(
-                """INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_values)
-                   VALUES (?, 'EMPLOYEE_CREATED', 'employee', ?, ?)""",
-                (actor["user_id"], employee_id, json.dumps({
-                    "employee_code": payload["employee_code"],
-                    "department_code": payload["department_code"],
-                    "location_id": payload["location_id"],
-                })),
-            )
             employee = _employee(connection, employee_id)
+            record_event(connection, action='EMPLOYEE_CREATED', entity_type='employee',
+                         entity_id=employee_id, employee_id=employee_id,
+                         after=_employee_summary(employee))
             connection.commit()
         except sqlite3.IntegrityError as error:
             connection.rollback()
@@ -289,6 +279,7 @@ def create_employee(payload: dict) -> dict:
     return _employee_summary(employee)
 
 
+@audited('EMPLOYEE_UPDATED', 'employee', employee_arg='employee_id')
 def update_employee(employee_id: int, payload: dict) -> dict:
     with closing(_connect()) as connection:
         try:
@@ -319,16 +310,9 @@ def update_employee(employee_id: int, payload: dict) -> dict:
             )
             updated = _employee(connection, employee_id)
             new_summary = _employee_summary(updated)
-            actor = connection.execute(
-                "SELECT user_id FROM app_user WHERE username = 'Admin@acme.org'"
-            ).fetchone()
-            if actor is None:
-                raise InvalidReference("Development audit actor is unavailable")
-            connection.execute(
-                """INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_values, new_values)
-                   VALUES (?, 'EMPLOYEE_UPDATED', 'employee', ?, ?, ?)""",
-                (actor["user_id"], employee_id, json.dumps(old_summary), json.dumps(new_summary)),
-            )
+            record_event(connection, action='EMPLOYEE_UPDATED', entity_type='employee',
+                         entity_id=employee_id, employee_id=employee_id,
+                         before=old_summary, after=new_summary)
             connection.commit()
             return new_summary
         except sqlite3.IntegrityError as error:
@@ -339,6 +323,7 @@ def update_employee(employee_id: int, payload: dict) -> dict:
             raise
 
 
+@audited('EXPORT_FAILED', 'export')
 def export_directory(*, search: str | None, country: str | None,
                      department: str | None, role: str | None,
                      status: str | None, package_state: str | None) -> str:
@@ -372,19 +357,11 @@ def export_directory(*, search: str | None, country: str | None,
                                  row["current_base_pay"] if row["current_base_pay"] is not None else "",
                                  row["current_currency_code"] or "",
                                  row["current_pay_frequency"] or ""))
-            actor = connection.execute(
-                "SELECT user_id FROM app_user WHERE username = 'Admin@acme.org'"
-            ).fetchone()
-            if actor is None:
-                raise InvalidReference("Development audit actor is unavailable")
-            connection.execute(
-                """INSERT INTO audit_log (user_id, action, entity_type, new_values)
-                   VALUES (?, 'DATA_EXPORTED', 'employee_directory', ?)""",
-                (actor["user_id"], json.dumps({"row_count": len(rows), "filters": {
-                    "search": search, "country": country, "department": department,
-                    "role": role, "status": status, "package_state": package_state,
-                }})),
-            )
+            request_export(connection, dataset='Employee directory',
+                           employee_ids=[row['employee_id'] for row in rows],
+                           metadata={'row_count':len(rows), 'filters':{
+                               'search':search, 'country':country, 'department':department,
+                               'role':role, 'status':status, 'package_state':package_state}})
             connection.commit()
         except Exception:
             connection.rollback()
@@ -396,12 +373,9 @@ PACKAGE_COLUMNS = """
 ec.id, ec.employee_id, ec.base_pay, ec.variable_pay, ec.pay_frequency,
 ec.effective_from, ec.effective_to,
 cu.currency_code, cu.currency_name, cu.symbol, cu.decimal_places,
-CASE WHEN json_valid(a.new_values) THEN json_extract(a.new_values, '$.reason')
-     ELSE NULL END AS change_reason,
-CASE WHEN json_valid(a.new_values) THEN json_extract(a.new_values, '$.change_trigger')
-     ELSE NULL END AS change_trigger,
-CASE WHEN json_valid(a.new_values) THEN json_extract(a.new_values, '$.authorization_reference')
-     ELSE NULL END AS authorization_reference
+COALESCE(a.reason, CASE WHEN json_valid(a.new_values) THEN json_extract(a.new_values, '$.reason') END) AS change_reason,
+COALESCE(json_extract(a.metadata, '$.change_trigger'), CASE WHEN json_valid(a.new_values) THEN json_extract(a.new_values, '$.change_trigger') END) AS change_trigger,
+COALESCE(json_extract(a.metadata, '$.authorization_reference'), CASE WHEN json_valid(a.new_values) THEN json_extract(a.new_values, '$.authorization_reference') END) AS authorization_reference
 """
 
 PACKAGE_FROM = """
@@ -410,7 +384,7 @@ JOIN currency cu ON cu.currency_id = ec.currency_id
 LEFT JOIN audit_log a ON a.audit_id = (
     SELECT MAX(a2.audit_id) FROM audit_log a2
     WHERE a2.entity_type = 'employee_compensation' AND a2.entity_id = ec.id
-      AND a2.action = 'CREATE_COMPENSATION'
+      AND a2.action = 'CREATE_COMPENSATION' AND a2.outcome = 'SUCCESS'
 )
 """
 
@@ -466,15 +440,6 @@ def get_compensation_detail(employee_id: int, as_of: date | None = None) -> dict
             ).fetchone()
             if manager_row is not None:
                 manager = dict(manager_row)
-        events = connection.execute(
-            """SELECT a.audit_id, a.action, a.created_at, a.new_values, u.username AS actor
-               FROM audit_log a LEFT JOIN app_user u ON u.user_id = a.user_id
-               WHERE (a.entity_type = 'employee' AND a.entity_id = ?)
-                  OR (a.entity_type = 'employee_compensation' AND a.entity_id IN
-                      (SELECT id FROM employee_compensation WHERE employee_id = ?))
-               ORDER BY a.created_at DESC, a.audit_id DESC LIMIT 20""",
-            (employee_id, employee_id),
-        ).fetchall()
     current = next((package for package in packages
                     if package["effective_from"] <= selected
                     and (package["effective_to"] is None or selected <= package["effective_to"])), None)
@@ -482,29 +447,21 @@ def get_compensation_detail(employee_id: int, as_of: date | None = None) -> dict
                if package["effective_to"] is not None and package["effective_to"] < selected]
     scheduled = sorted((package for package in packages if package["effective_from"] > selected),
                        key=lambda package: package["effective_from"])
-    activity = []
-    for event in events:
-        try:
-            values = json.loads(event["new_values"]) if event["new_values"] else {}
-        except json.JSONDecodeError:
-            values = {}
-        if not isinstance(values, dict):
-            values = {}
-        package_values = values.get("package")
-        activity.append({
-            "id": event["audit_id"], "action": event["action"],
-            "created_at": event["created_at"], "actor": event["actor"],
-            "reason": values.get("reason"),
-            "change_trigger": values.get("change_trigger"),
-            "authorization_reference": values.get("authorization_reference"),
-            "effective_from": package_values.get("effective_from") if isinstance(package_values, dict) else None,
-        })
+    from backend.audit_store import list_events
+    activity = [{
+        'id':event['id'], 'action':event['action'], 'created_at':event['timestamp'],
+        'actor':event['actor']['name'], 'reason':event['reason'],
+        'change_trigger':event['metadata'].get('change_trigger'),
+        'authorization_reference':event['metadata'].get('authorization_reference'),
+        'effective_from':event['metadata'].get('effective_from'),
+    } for event in list_events(employee_id=employee_id, page_size=20)['items']]
     summary = _employee_summary(employee)
     summary["manager"] = manager
     return {"employee": summary, "as_of": selected, "current": current,
             "history": history, "scheduled": scheduled, "activity": activity}
 
 
+@audited('EXPORT_FAILED', 'employee', employee_arg='employee_id')
 def export_employee_compensation(employee_id: int, as_of: date | None = None) -> str:
     detail = get_compensation_detail(employee_id, as_of)
     employee = detail["employee"]
@@ -527,19 +484,12 @@ def export_employee_compensation(employee_id: int, as_of: date | None = None) ->
                              allowance["frequency"] if allowance else "", safe(package["change_reason"])))
     with closing(_connect()) as connection:
         with connection:
-            actor = connection.execute(
-                "SELECT user_id FROM app_user WHERE username = 'Admin@acme.org'"
-            ).fetchone()
-            if actor is None:
-                raise InvalidReference("Development audit actor is unavailable")
-            connection.execute(
-                """INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_values)
-                   VALUES (?, 'DATA_EXPORTED', 'employee', ?, ?)""",
-                (actor["user_id"], employee_id, json.dumps({"as_of": detail["as_of"], "package_count": len(packages)})),
-            )
+            request_export(connection, dataset='Employee compensation', employee_ids=[employee_id],
+                           metadata={'as_of':detail['as_of'], 'package_count':len(packages)})
     return output.getvalue()
 
 
+@audited('CREATE_COMPENSATION', 'employee_compensation', employee_arg='employee_id')
 def create_compensation(employee_id: int, payload: dict) -> dict:
     """Append a complete package and audit event in one serialized transaction."""
     effective_from = payload["effective_from"]
@@ -605,22 +555,23 @@ def create_compensation(employee_id: int, payload: dict) -> dict:
             package["change_reason"] = payload["reason"]
             package["change_trigger"] = payload.get("change_trigger")
             package["authorization_reference"] = payload.get("authorization_reference")
-            actor = connection.execute(
-                "SELECT user_id FROM app_user WHERE username = 'Admin@acme.org' AND role = 'NORMAL_USER' AND status = 'ACTIVE'"
-            ).fetchone()
-            if actor is None:
-                raise RuntimeError("Local audit actor is missing or inactive")
-            connection.execute(
-                """INSERT INTO audit_log
-                   (user_id, action, entity_type, entity_id, old_values, new_values)
-                   VALUES (?, 'CREATE_COMPENSATION', 'employee_compensation', ?, ?, ?)""",
-                (actor["user_id"], package_id,
-                 json.dumps(before) if before is not None else None,
-                 json.dumps({"reason": payload["reason"],
-                             "change_trigger": payload.get("change_trigger"),
-                             "authorization_reference": payload.get("authorization_reference"),
-                             "package": package})),
-            )
+            old_fields, new_fields = package_fields(before), package_fields(package)
+            if latest and (latest['effective_to'] is None or latest['effective_to'] >= effective_from.isoformat()):
+                old_fields['previous_period.effective_to'] = latest['effective_to']
+                new_fields['previous_period.effective_to'] = (effective_from - timedelta(days=1)).isoformat()
+            record_event(connection, action='CREATE_COMPENSATION', entity_type='employee_compensation',
+                         entity_id=package_id, employee_id=employee_id,
+                         before=old_fields, after=new_fields, reason=payload['reason'], metadata={
+                             'before_currency':before['currency'] if before else None,
+                             'after_currency':package['currency'],
+                             'before_frequency':before['pay_frequency'] if before else None,
+                             'after_frequency':package['pay_frequency'],
+                             'before_allowance_frequencies':{a['type_code']:a['frequency'] for a in before['allowances']} if before else {},
+                             'after_allowance_frequencies':{a['type_code']:a['frequency'] for a in package['allowances']},
+                             'effective_from':package['effective_from'],
+                             'previous_package_id':latest['id'] if latest else None,
+                             'change_trigger':payload.get('change_trigger'),
+                             'authorization_reference':payload.get('authorization_reference')})
             connection.commit()
             return package
         except sqlite3.IntegrityError as error:

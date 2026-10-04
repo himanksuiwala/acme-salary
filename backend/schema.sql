@@ -1,4 +1,4 @@
--- Version 3. Dates use YYYY-MM-DD text; monetary amounts use integer minor units.
+-- Version 4. Dates use YYYY-MM-DD text; monetary amounts use integer minor units.
 BEGIN IMMEDIATE;
 
 CREATE TABLE currency (
@@ -122,6 +122,12 @@ CREATE TABLE audit_log (
     old_values TEXT,
     new_values TEXT,
     ip_address TEXT,
+    employee_id INTEGER REFERENCES employee(employee_id) ON DELETE RESTRICT,
+    operation_id TEXT,
+    outcome TEXT NOT NULL DEFAULT 'SUCCESS' CHECK (outcome IN ('SUCCESS', 'FAILED')),
+    actor_name TEXT,
+    reason TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata)),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -164,5 +170,5 @@ CREATE INDEX allowance_type_idx ON employee_allowance(allowance_type_id);
 CREATE INDEX app_user_employee_idx ON app_user(employee_id);
 CREATE INDEX audit_user_idx ON audit_log(user_id);
 
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;
 COMMIT;

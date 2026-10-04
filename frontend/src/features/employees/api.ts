@@ -1,3 +1,6 @@
+import { downloadFile, parseResponse } from '@/lib/api'
+export { ApiError } from '@/lib/api'
+
 export type Currency = {
   code: string
   name: string
@@ -124,24 +127,6 @@ export type EmployeeEdit = Pick<EmployeeSummary, 'first_name' | 'last_name' | 'e
   location_id: number
 }
 
-export class ApiError extends Error {
-  readonly status: number
-  constructor(message: string, status: number) { super(message); this.status = status }
-}
-
-async function parseResponse<T>(response: Response): Promise<T> {
-  if (response.ok) return (await response.json()) as T
-  let detail = `Request failed (${response.status})`
-  try {
-    const body = (await response.json()) as { detail?: string | { msg?: string }[] }
-    if (typeof body.detail === 'string') detail = body.detail
-    else if (Array.isArray(body.detail)) detail = body.detail.map((item) => item.msg).filter(Boolean).join('; ')
-  } catch {
-    // A non-JSON server error still has the HTTP status above.
-  }
-  throw new ApiError(detail, response.status)
-}
-
 export function queryParams(query: DirectoryQuery, includePage = true): URLSearchParams {
   const params = new URLSearchParams()
   for (const key of ['search', 'country', 'department', 'role', 'status', 'package_state'] as const) {
@@ -175,16 +160,7 @@ export async function createCompensation(employeeId: number, packageInput: NewCo
 }
 
 export async function downloadEmployeeCompensation(employeeId: number, asOf: string): Promise<void> {
-  const response = await fetch(`/api/employees/${employeeId}/compensation/export?as_of=${encodeURIComponent(asOf)}`)
-  if (!response.ok) { await parseResponse<never>(response); return }
-  const url = URL.createObjectURL(await response.blob())
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `employee-${employeeId}-compensation.csv`
-  document.body.append(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  await downloadFile(`/api/employees/${employeeId}/compensation/export?as_of=${encodeURIComponent(asOf)}`, `employee-${employeeId}-compensation.csv`)
 }
 
 export async function createEmployee(employee: NewEmployee): Promise<EmployeeSummary> {
@@ -204,17 +180,5 @@ export async function updateEmployee(employeeId: number, changes: EmployeeEdit):
 }
 
 export async function downloadDirectory(query: DirectoryQuery): Promise<void> {
-  const response = await fetch(`/api/employees/export?${queryParams(query, false)}`)
-  if (!response.ok) {
-    await parseResponse<never>(response)
-    return
-  }
-  const url = URL.createObjectURL(await response.blob())
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'employee-directory.csv'
-  document.body.append(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  await downloadFile(`/api/employees/export?${queryParams(query, false)}`, 'employee-directory.csv')
 }

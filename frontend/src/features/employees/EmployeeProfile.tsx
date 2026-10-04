@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { CompensationPackage, EmployeeDetail } from "./api";
 import { downloadEmployeeCompensation, getEmployeeDetail } from "./api";
 import { formatDate, formatMoney, statusLabel } from "./format";
+import { EmployeeAuditCard } from "@/components/product/EmployeeAuditCard";
 import { EditEmployeeSheet } from "./EditEmployeeSheet";
 
 function utcToday() {
@@ -189,53 +190,18 @@ function PackageList({
   );
 }
 
-function Activity({ events }: { events: EmployeeDetail["activity"] }) {
-  return (
-    <Card className="border ring-0">
-      <CardHeader>
-        <h2 className="text-lg font-semibold">Activity</h2>
-      </CardHeader>
-      <CardContent>
-        {events.length ? (
-          <ol className="divide-y">
-            {events.map((event) => (
-              <li key={event.id} className="py-3 first:pt-0">
-                <p className="text-sm font-medium">
-                  {event.action === "CREATE_COMPENSATION"
-                    ? "Package recorded"
-                    : event.action === "EMPLOYEE_CREATED"
-                      ? "Employee created"
-                      : event.action === "DATA_EXPORTED"
-                        ? "Compensation exported"
-                        : statusLabel(event.action)}
-                </p>
-                {event.reason && <p className="mt-1 text-sm text-muted-foreground">{event.reason}</p>}
-                {event.authorization_reference && <p className="mt-1 text-[13px] text-muted-foreground">Reference: {event.authorization_reference}</p>}
-                <p className="mt-1 text-[13px] text-muted-foreground tabular-nums">
-                  {event.actor || "Unknown actor"} · {event.created_at} UTC
-                  {event.effective_from ? ` · Effective ${formatDate(event.effective_from)}` : ""}
-                </p>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="text-sm text-muted-foreground">No activity is recorded for this employee.</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 export function EmployeeProfile({
   employeeId,
   savedPackageId,
   onBack,
   onRecordCompensation,
+  onFullAuditLog,
 }: {
   employeeId: number;
   savedPackageId?: number | null;
   onBack: () => void;
   onRecordCompensation: () => void;
+  onFullAuditLog: (employeeId: number) => void;
 }) {
   const [asOf, setAsOf] = useState(utcToday);
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
@@ -244,6 +210,7 @@ export function EmployeeProfile({
   const [retry, setRetry] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [auditRefresh, setAuditRefresh] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
@@ -270,6 +237,7 @@ export function EmployeeProfile({
       setExportError(cause instanceof Error ? cause.message : "Export failed.");
     } finally {
       setExporting(false);
+      setAuditRefresh((value) => value + 1);
     }
   }
   const employee = detail?.employee;
@@ -455,7 +423,7 @@ export function EmployeeProfile({
                   </dl>
                 </CardContent>
               </Card>
-              <Activity events={detail.activity} />
+              <EmployeeAuditCard employeeId={employeeId} refreshKey={auditRefresh + retry} onFullAuditLog={onFullAuditLog} />
               <p className="text-[13px] leading-5 text-muted-foreground">
                 Package dates use UTC. Values retain their stored currency and frequency.
               </p>

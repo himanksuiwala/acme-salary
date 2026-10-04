@@ -65,6 +65,8 @@ def _add_missing_timestamps(connection: sqlite3.Connection) -> None:
 
 def _create_timestamp_triggers(connection: sqlite3.Connection) -> None:
     for table, primary_key in TABLE_PRIMARY_KEYS.items():
+        if table == "audit_log":
+            continue  # Audit timestamps are fixed when the event is inserted.
         connection.execute(
             f"""CREATE TRIGGER IF NOT EXISTS {table}_fill_timestamps
                 AFTER INSERT ON {table}
@@ -100,12 +102,47 @@ def _create_timestamp_triggers(connection: sqlite3.Connection) -> None:
         )
 
 
+def _migrate_audit(connection: sqlite3.Connection) -> None:
+    for suffix in ("fill_timestamps", "touch_updated_at", "require_timestamps"):
+        connection.execute(f"DROP TRIGGER IF EXISTS audit_log_{suffix}")
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(audit_log)")}
+    additions = {
+        "employee_id": "INTEGER REFERENCES employee(employee_id) ON DELETE RESTRICT",
+        "operation_id": "TEXT",
+        "outcome": "TEXT NOT NULL DEFAULT 'SUCCESS' CHECK(outcome IN ('SUCCESS', 'FAILED'))",
+        "actor_name": "TEXT",
+        "reason": "TEXT",
+        "metadata": "TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(metadata))",
+    }
+    if "operation_id" not in columns:
+        for name, definition in additions.items():
+            connection.execute(f"ALTER TABLE audit_log ADD COLUMN {name} {definition}")
+        connection.execute("""UPDATE audit_log SET
+            employee_id = CASE
+                WHEN entity_type = 'employee' THEN (SELECT employee_id FROM employee WHERE employee_id = audit_log.entity_id)
+                WHEN entity_type = 'employee_compensation' THEN (SELECT employee_id FROM employee_compensation WHERE id = audit_log.entity_id)
+                ELSE NULL END,
+            operation_id = 'legacy-' || audit_id,
+            actor_name = (SELECT username FROM app_user WHERE user_id = audit_log.user_id),
+            reason = CASE WHEN json_valid(new_values) THEN json_extract(new_values, '$.reason') END,
+            metadata = '{"legacy":true}'""")
+    connection.execute("CREATE INDEX IF NOT EXISTS audit_time_idx ON audit_log(created_at DESC, audit_id DESC)")
+    connection.execute("CREATE INDEX IF NOT EXISTS audit_employee_time_idx ON audit_log(employee_id, created_at DESC, audit_id DESC)")
+    connection.execute("CREATE INDEX IF NOT EXISTS audit_action_idx ON audit_log(action)")
+    connection.execute("CREATE INDEX IF NOT EXISTS audit_operation_idx ON audit_log(operation_id)")
+    for operation in ("UPDATE", "DELETE"):
+        connection.execute(f"""CREATE TRIGGER IF NOT EXISTS audit_log_no_{operation.lower()}
+            BEFORE {operation} ON audit_log BEGIN
+            SELECT RAISE(ABORT, 'audit events are append-only'); END""")
+    connection.execute("PRAGMA user_version = 4")
+
+
 def initialize_database(path: Path | None = None) -> Path:
     """Create or migrate the schema and seed the two application actors."""
     path = path or database_path()
     with closing(connect_database(path)) as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3):
+        if version not in (0, 1, 2, 3, 4):
             raise RuntimeError(f"Unsupported database schema version: {version}")
 
         if version == 0:
@@ -130,8 +167,7 @@ def initialize_database(path: Path | None = None) -> Path:
                     connection.execute(f"DROP TRIGGER IF EXISTS {table}_fill_timestamps")
                     connection.execute(f"DROP TRIGGER IF EXISTS {table}_touch_updated_at")
             _create_timestamp_triggers(connection)
-            if version in (1, 2):
-                connection.execute("PRAGMA user_version = 3")
+            _migrate_audit(connection)
             connection.executemany(
                 """
                 INSERT INTO app_user (username, email, password_hash, role, status)
