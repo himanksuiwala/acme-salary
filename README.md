@@ -49,6 +49,46 @@ Open the local URL printed by Vite. The page calls `/api/health` through Vite's 
 
 Run the database checks with `backend/.venv/bin/python -m unittest discover -s backend/tests -v`.
 
+## Spec-driven workflow
+
+This repository is initialized with [Spec Kit](https://github.github.com/spec-kit/) for Codex.
+The shared project rules are in [the constitution](.specify/memory/constitution.md), and
+the agent skills and templates are in `.agents/skills/` and `.specify/`. New contributors
+can install the CLI with `uv tool install specify-cli`, then run `specify version` and
+`specify integration status` from the repository root. The project was initialized
+with Spec Kit 1.0.10. Open a new Codex session in this directory to load its skills.
+
+For each bounded feature, use these skills in Codex chat, reviewing each artifact
+before moving on:
+
+1. `$speckit-specify` with the requested outcome and compatibility constraints;
+   this creates `specs/<number>-<name>/spec.md`.
+2. `$speckit-clarify` if requirements have material ambiguity.
+3. `$speckit-plan` to design against the existing FastAPI, SQLite, and React code.
+4. `$speckit-tasks`, then `$speckit-analyze` to check the spec, plan, and tasks.
+5. `$speckit-implement`, then `$speckit-converge`; repeat until the change is complete.
+
+The constitution is already established for this project. Use `$speckit-constitution`
+when its principles need an amendment. Specs for future work belong in `specs/`.
+The local `artifacts/` directory is ignored by Git, so put requirements needed by
+other contributors in the relevant feature spec.
+
+## Generate sample data
+
+The seed generator creates 50 employees across India, the United States, the United Kingdom, Germany, and Singapore, with ten employees per country. Salary bands depend on country, department, and role. The figures are illustrative synthetic amounts, not compensation benchmarks. Each employee has one prior and one current annual compensation package, and each package has one to three monthly allowances. Only the two existing app users remain; no audit entries are generated.
+
+Run one of these commands from the repository root:
+
+```bash
+backend/.venv/bin/python -m backend.seed_data --format csv
+backend/.venv/bin/python -m backend.seed_data --format xlsx
+backend/.venv/bin/python -m backend.seed_data --format sqlite
+```
+
+CSV creates eight files in `exports/seed-data/`; Excel creates `exports/seed-data.xlsx` with one sheet per generated table. Use `--output PATH` to choose another export destination. SQLite seeds `DB_PATH` (default `backend/data/app.db`); use `--db-path PATH` to target a separate database. SQLite mode stops if any of the eight business tables already contains data. Export paths must not already exist.
+
+All modes default to Faker seed `42` and an as-of date of `2026-10-01`; use `--seed NUMBER` and `--as-of YYYY-MM-DD` to change them. Faker is pinned in `backend/requirements.txt` so the generated records stay reproducible across installs. CSV and Excel use the same explicit IDs and integer minor-unit amounts as SQLite.
+
 ## Project layout
 
 ```text
