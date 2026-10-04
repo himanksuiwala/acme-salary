@@ -78,6 +78,8 @@ export type CompensationPackage = {
   effective_from: string
   effective_to: string | null
   change_reason: string | null
+  change_trigger: ChangeTrigger | null
+  authorization_reference: string | null
   allowances: { type_code: string; type_name: string; amount: number; frequency: string }[]
 }
 
@@ -87,8 +89,10 @@ export type EmployeeDetail = {
   current: CompensationPackage | null
   scheduled: CompensationPackage[]
   history: CompensationPackage[]
-  activity: { id: number; action: string; created_at: string; actor: string | null; reason: string | null; effective_from: string | null }[]
+  activity: { id: number; action: string; created_at: string; actor: string | null; reason: string | null; change_trigger: ChangeTrigger | null; authorization_reference: string | null; effective_from: string | null }[]
 }
+
+export type ChangeTrigger = 'ANNUAL_MERIT' | 'PROMOTION' | 'MARKET' | 'RETENTION' | 'RELOCATION' | 'OTHER'
 
 export type NewCompensation = {
   base_pay: number
@@ -97,6 +101,8 @@ export type NewCompensation = {
   pay_frequency: 'ANNUAL' | 'MONTHLY' | 'HOURLY'
   effective_from: string
   reason: string
+  change_trigger?: ChangeTrigger | null
+  authorization_reference?: string | null
   allowances: { type_code: string; amount: number; frequency: 'ANNUAL' | 'MONTHLY' | 'HOURLY' }[]
 }
 
@@ -118,6 +124,11 @@ export type EmployeeEdit = Pick<EmployeeSummary, 'first_name' | 'last_name' | 'e
   location_id: number
 }
 
+export class ApiError extends Error {
+  readonly status: number
+  constructor(message: string, status: number) { super(message); this.status = status }
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   if (response.ok) return (await response.json()) as T
   let detail = `Request failed (${response.status})`
@@ -128,7 +139,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
   } catch {
     // A non-JSON server error still has the HTTP status above.
   }
-  throw new Error(detail)
+  throw new ApiError(detail, response.status)
 }
 
 export function queryParams(query: DirectoryQuery, includePage = true): URLSearchParams {

@@ -80,6 +80,7 @@ function App() {
   const [location, setLocation] = useState<LocationState>(readLocation)
   const locationRef = useRef(location)
   const [navOpen, setNavOpen] = useState(false)
+  const [savedPackageId, setSavedPackageId] = useState<number | null>(null)
 
   useEffect(() => { locationRef.current = location }, [location])
   useEffect(() => {
@@ -106,6 +107,7 @@ function App() {
   }, [])
 
   const openEmployee = useCallback((employeeId: number) => {
+    setSavedPackageId(null)
     const next = { ...locationRef.current, employeeId, compensationForm: false }
     locationRef.current = next
     setLocation(next)
@@ -115,6 +117,7 @@ function App() {
 
   const openDirectory = useCallback(() => {
     setNavOpen(false)
+    setSavedPackageId(null)
     if (locationRef.current.employeeId === null) return
     const next = { ...locationRef.current, employeeId: null, compensationForm: false }
     locationRef.current = next
@@ -123,6 +126,7 @@ function App() {
   }, [])
 
   const openCompensationForm = useCallback(() => {
+    setSavedPackageId(null)
     const next = { ...locationRef.current, compensationForm: true }
     locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
   }, [])
@@ -131,6 +135,11 @@ function App() {
     const next = { ...locationRef.current, compensationForm: false }
     locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
   }, [])
+
+  const completeCompensationForm = useCallback((packageId: number) => {
+    setSavedPackageId(packageId)
+    closeCompensationForm()
+  }, [closeCompensationForm])
 
   return (
     <div className="min-h-svh bg-neutral-50 text-foreground">
@@ -148,8 +157,8 @@ function App() {
         </div>
         <main>
           {location.employeeId ? location.compensationForm
-            ? <CompensationForm key={location.employeeId} employeeId={location.employeeId} onCancel={closeCompensationForm} onSaved={closeCompensationForm} />
-            : <EmployeeProfile key={location.employeeId} employeeId={location.employeeId} onBack={openDirectory} onRecordCompensation={openCompensationForm} />
+            ? <CompensationForm key={location.employeeId} employeeId={location.employeeId} onCancel={closeCompensationForm} onSaved={completeCompensationForm} />
+            : <EmployeeProfile key={location.employeeId} employeeId={location.employeeId} savedPackageId={savedPackageId} onBack={openDirectory} onRecordCompensation={openCompensationForm} />
             : <EmployeeDirectory query={location.query} updateQuery={updateQuery} onOpenEmployee={openEmployee} />}
         </main>
       </div>

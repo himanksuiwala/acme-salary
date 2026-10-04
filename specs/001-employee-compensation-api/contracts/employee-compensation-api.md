@@ -32,20 +32,22 @@ Unknown filter values yield 200 with no items. Invalid pagination yields 422. Ou
 
 ## GET `/api/employees/{employee_id}/compensation`
 
-`employee_id` is a positive numeric database ID. The API uses the current UTC calendar date to classify packages. Response 404 if unknown.
+`employee_id` is a positive numeric database ID. Optional `as_of=YYYY-MM-DD` classifies packages on that UTC calendar date; the default is today UTC. Response 404 if unknown.
 
 200 response:
 
 ```json
 {
   "employee": {"employee_id": 1, "employee_code": "EMP001", "first_name": "Ana", "last_name": "Singh", "email": "ana@example.org", "job_title": "Analyst", "status": "ACTIVE", "department": {"code": "HR", "name": "Human Resources"}, "location": {"id": 1, "name": "London", "city": "London"}, "country": {"code": "GB", "name": "United Kingdom"}},
-  "current": {"id": 12, "base_pay": 8000000, "variable_pay": null, "currency": {"code": "USD", "name": "US Dollar", "symbol": "$", "decimal_places": 2}, "pay_frequency": "ANNUAL", "effective_from": "2026-04-01", "effective_to": null, "change_reason": null, "allowances": [{"type_code": "MEAL", "type_name": "Meal", "amount": 10000, "frequency": "MONTHLY"}]},
+  "as_of": "2026-10-04",
+  "current": {"id": 12, "base_pay": 8000000, "variable_pay": null, "currency": {"code": "USD", "name": "US Dollar", "symbol": "$", "decimal_places": 2}, "pay_frequency": "ANNUAL", "effective_from": "2026-04-01", "effective_to": null, "change_reason": null, "change_trigger": null, "authorization_reference": null, "allowances": [{"type_code": "MEAL", "type_name": "Meal", "amount": 10000, "frequency": "MONTHLY"}]},
   "history": [],
-  "scheduled": []
+  "scheduled": [],
+  "activity": []
 }
 ```
 
-`current` is null when no package covers today. `history` is newest first; `scheduled` is earliest first. Every package uses the same shape; arrays may be empty.
+`current` is null when no package covers `as_of`. `history` is newest first; `scheduled` is earliest first. Every package uses the same shape; arrays may be empty. `activity` contains recent employee and compensation audit summaries.
 
 ## POST `/api/employees/{employee_id}/compensation`
 
@@ -59,11 +61,13 @@ The request is a complete new package. An omitted allowance does not appear on t
   "pay_frequency": "ANNUAL",
   "effective_from": "2026-11-01",
   "reason": "Annual review",
+  "change_trigger": "ANNUAL_MERIT",
+  "authorization_reference": "HR-2026-14",
   "allowances": [{"type_code": "MEAL", "amount": 10000, "frequency": "MONTHLY"}]
 }
 ```
 
-201 response: `{"compensation": <package object>}`. `change_reason` equals the submitted reason. Empty `allowances` is allowed. Codes are case-insensitive and normalized to stored codes.
+201 response: `{"compensation": <package object>}`. `change_reason` equals the submitted reason. Empty `allowances` is allowed. Codes are case-insensitive and normalized to stored codes. `change_trigger` and `authorization_reference` are optional for existing clients; the form requires a trigger. Allowed triggers are `ANNUAL_MERIT`, `PROMOTION`, `MARKET`, `RETENTION`, `RELOCATION`, and `OTHER`. The reference is at most 120 characters. Both values are stored in the audit event and returned in package reads. A reference does not prove approval or attach a document.
 
 - 404: employee not found.
 - 422: malformed or invalid field, negative/non-integer money, unknown currency or allowance type, duplicate allowance type, blank reason, invalid date or frequency.

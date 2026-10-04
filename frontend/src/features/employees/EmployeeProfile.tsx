@@ -111,6 +111,13 @@ function PackageDetails({ item }: { item: CompensationPackage }) {
         <span className="text-muted-foreground">Reason: </span>
         {item.change_reason || "Not recorded"}
       </p>
+      {(item.change_trigger || item.authorization_reference) && (
+        <p className="text-[13px] text-muted-foreground">
+          {item.change_trigger && `Category: ${statusLabel(item.change_trigger)}`}
+          {item.change_trigger && item.authorization_reference && " · "}
+          {item.authorization_reference && `Reference: ${item.authorization_reference}`}
+        </p>
+      )}
     </div>
   );
 }
@@ -119,10 +126,12 @@ function PackageList({
   title,
   packages,
   scheduled = false,
+  savedPackageId,
 }: {
   title: string;
   packages: CompensationPackage[];
   scheduled?: boolean;
+  savedPackageId?: number | null;
 }) {
   return (
     <section className="space-y-3" aria-label={title}>
@@ -134,7 +143,7 @@ function PackageList({
       </div>
       {packages.length ? (
         packages.map((item) => (
-          <Card key={item.id} className="border ring-0">
+          <Card key={item.id} className={item.id === savedPackageId ? "border border-emerald-500 ring-1 ring-emerald-500" : "border ring-0"}>
             <CardContent>
               <details className="group">
                 <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 rounded-lg py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
@@ -159,6 +168,7 @@ function PackageList({
                       {formatMoney(item.base_pay, item.currency, item.pay_frequency)}
                     </span>
                     {scheduled && <Badge variant="info">Scheduled</Badge>}
+                    {item.id === savedPackageId && <Badge variant="success">Just saved</Badge>}
                   </div>
                 </summary>
                 <div className="mt-4 border-t pt-5">
@@ -200,6 +210,7 @@ function Activity({ events }: { events: EmployeeDetail["activity"] }) {
                         : statusLabel(event.action)}
                 </p>
                 {event.reason && <p className="mt-1 text-sm text-muted-foreground">{event.reason}</p>}
+                {event.authorization_reference && <p className="mt-1 text-[13px] text-muted-foreground">Reference: {event.authorization_reference}</p>}
                 <p className="mt-1 text-[13px] text-muted-foreground tabular-nums">
                   {event.actor || "Unknown actor"} · {event.created_at} UTC
                   {event.effective_from ? ` · Effective ${formatDate(event.effective_from)}` : ""}
@@ -217,10 +228,12 @@ function Activity({ events }: { events: EmployeeDetail["activity"] }) {
 
 export function EmployeeProfile({
   employeeId,
+  savedPackageId,
   onBack,
   onRecordCompensation,
 }: {
   employeeId: number;
+  savedPackageId?: number | null;
   onBack: () => void;
   onRecordCompensation: () => void;
 }) {
@@ -260,6 +273,7 @@ export function EmployeeProfile({
     }
   }
   const employee = detail?.employee;
+  const savedPackage = detail && savedPackageId ? [detail.current, ...detail.scheduled, ...detail.history].find((item) => item?.id === savedPackageId) : null;
   return (
     <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
       <Button variant="ghost" className="-ml-2 mb-5" onClick={onBack}>
@@ -293,6 +307,7 @@ export function EmployeeProfile({
         </Card>
       ) : employee ? (
         <>
+          {savedPackage && <p className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">Package saved for {employee.employee_code}, effective {formatDate(savedPackage.effective_from)}. It is highlighted below.</p>}
           <header className="mb-6 border-b pb-6">
             <p className="text-[13px] text-muted-foreground">Employees / {employee.employee_code}</p>
             <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
@@ -365,12 +380,13 @@ export function EmployeeProfile({
             <div className="min-w-0 space-y-7">
               {detail.current ? (
                 <section aria-labelledby="current-heading">
-                  <Card className="border border-emerald-200 ring-0">
+                  <Card className={detail.current.id === savedPackageId ? "border border-emerald-500 ring-1 ring-emerald-500" : "border border-emerald-200 ring-0"}>
                     <CardHeader className="flex flex-wrap items-center justify-between gap-2">
                       <h2 id="current-heading" className="text-lg font-semibold">
                         Current package
                       </h2>
                       <Badge variant="success">Current</Badge>
+                      {detail.current.id === savedPackageId && <Badge variant="success">Just saved</Badge>}
                     </CardHeader>
                     <CardContent>
                       <p className="mb-5 text-[13px] text-muted-foreground tabular-nums">
@@ -398,8 +414,8 @@ export function EmployeeProfile({
                   </Empty>
                 </section>
               )}
-              <PackageList title="Scheduled compensation" packages={detail.scheduled} scheduled />
-              <PackageList title="Compensation history" packages={detail.history} />
+              <PackageList title="Scheduled compensation" packages={detail.scheduled} scheduled savedPackageId={savedPackageId} />
+              <PackageList title="Compensation history" packages={detail.history} savedPackageId={savedPackageId} />
             </div>
             <aside className="space-y-6">
               <Card className="border ring-0">
