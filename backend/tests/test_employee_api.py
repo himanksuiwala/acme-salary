@@ -273,10 +273,13 @@ class EmployeeApiTests(unittest.TestCase):
         self.assertEqual(request("PATCH", "/api/employees/1", body={**payload, "email": "person2@example.org"})[0], 409)
 
     def test_create_package_preserves_history_allowances_and_audit(self):
-        status, result = request("POST", "/api/employees/1/compensation", body=self.new_package())
+        status, result = request("POST", "/api/employees/1/compensation", body=self.new_package(
+            change_trigger="ANNUAL_MERIT", authorization_reference="HR-2026-14"))
         self.assertEqual(status, 201, result)
         self.assertEqual(result["compensation"]["base_pay"], 9000000)
         self.assertEqual(result["compensation"]["change_reason"], "Annual review")
+        self.assertEqual(result["compensation"]["change_trigger"], "ANNUAL_MERIT")
+        self.assertEqual(result["compensation"]["authorization_reference"], "HR-2026-14")
         self.assertEqual([a["type_code"] for a in result["compensation"]["allowances"]], ["MEAL"])
         detail = request("GET", "/api/employees/1/compensation")[1]
         self.assertEqual(detail["current"]["base_pay"], 8000000)
@@ -285,6 +288,9 @@ class EmployeeApiTests(unittest.TestCase):
                          (self.today + timedelta(days=29)).isoformat())
         self.assertEqual(len(detail["current"]["allowances"]), 2)
         self.assertEqual(len(detail["scheduled"][0]["allowances"]), 1)
+        self.assertEqual(detail["scheduled"][0]["authorization_reference"], "HR-2026-14")
+        self.assertEqual(detail["activity"][0]["change_trigger"], "ANNUAL_MERIT")
+        self.assertEqual(detail["activity"][0]["authorization_reference"], "HR-2026-14")
         directory = request("GET", "/api/employees", query="package_state=SCHEDULED_CHANGE")[1]
         self.assertEqual(directory["items"][0]["employee_code"], "EMP001")
         self.assertEqual(directory["items"][0]["next_effective_from"],
@@ -303,6 +309,7 @@ class EmployeeApiTests(unittest.TestCase):
             (self.new_package(reason="  "), 422),
             (self.new_package(currency_code="XXX"), 422),
             (self.new_package(pay_frequency="WEEKLY"), 422),
+            (self.new_package(change_trigger="UNSUPPORTED"), 422),
             (self.new_package(effective_from=1793491200), 422),
             (self.new_package(effective_from="20261101"), 422),
             (self.new_package(allowances=[{"type_code": "NOPE", "amount": 5, "frequency": "MONTHLY"}]), 422),

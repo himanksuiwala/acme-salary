@@ -38,6 +38,8 @@ class CompensationInput(BaseModel):
     pay_frequency: Frequency
     effective_from: date
     reason: Reason
+    change_trigger: Literal["ANNUAL_MERIT", "PROMOTION", "MARKET", "RETENTION", "RELOCATION", "OTHER"] | None = None
+    authorization_reference: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)] | None = None
     allowances: list[AllowanceInput]
 
     @field_validator("effective_from", mode="before")

@@ -397,7 +397,11 @@ ec.id, ec.employee_id, ec.base_pay, ec.variable_pay, ec.pay_frequency,
 ec.effective_from, ec.effective_to,
 cu.currency_code, cu.currency_name, cu.symbol, cu.decimal_places,
 CASE WHEN json_valid(a.new_values) THEN json_extract(a.new_values, '$.reason')
-     ELSE NULL END AS change_reason
+     ELSE NULL END AS change_reason,
+CASE WHEN json_valid(a.new_values) THEN json_extract(a.new_values, '$.change_trigger')
+     ELSE NULL END AS change_trigger,
+CASE WHEN json_valid(a.new_values) THEN json_extract(a.new_values, '$.authorization_reference')
+     ELSE NULL END AS authorization_reference
 """
 
 PACKAGE_FROM = """
@@ -439,7 +443,10 @@ def _packages(connection: sqlite3.Connection, employee_id: int) -> list[dict]:
                      "symbol": row["symbol"], "decimal_places": row["decimal_places"]},
         "pay_frequency": row["pay_frequency"],
         "effective_from": row["effective_from"], "effective_to": row["effective_to"],
-        "change_reason": row["change_reason"], "allowances": allowances[row["id"]],
+        "change_reason": row["change_reason"],
+        "change_trigger": row["change_trigger"],
+        "authorization_reference": row["authorization_reference"],
+        "allowances": allowances[row["id"]],
     } for row in rows]
 
 
@@ -488,6 +495,8 @@ def get_compensation_detail(employee_id: int, as_of: date | None = None) -> dict
             "id": event["audit_id"], "action": event["action"],
             "created_at": event["created_at"], "actor": event["actor"],
             "reason": values.get("reason"),
+            "change_trigger": values.get("change_trigger"),
+            "authorization_reference": values.get("authorization_reference"),
             "effective_from": package_values.get("effective_from") if isinstance(package_values, dict) else None,
         })
     summary = _employee_summary(employee)
@@ -594,6 +603,8 @@ def create_compensation(employee_id: int, payload: dict) -> dict:
             package = next(package for package in _packages(connection, employee_id)
                            if package["id"] == package_id)
             package["change_reason"] = payload["reason"]
+            package["change_trigger"] = payload.get("change_trigger")
+            package["authorization_reference"] = payload.get("authorization_reference")
             actor = connection.execute(
                 "SELECT user_id FROM app_user WHERE username = 'Admin@acme.org' AND role = 'NORMAL_USER' AND status = 'ACTIVE'"
             ).fetchone()
@@ -605,7 +616,10 @@ def create_compensation(employee_id: int, payload: dict) -> dict:
                    VALUES (?, 'CREATE_COMPENSATION', 'employee_compensation', ?, ?, ?)""",
                 (actor["user_id"], package_id,
                  json.dumps(before) if before is not None else None,
-                 json.dumps({"reason": payload["reason"], "package": package})),
+                 json.dumps({"reason": payload["reason"],
+                             "change_trigger": payload.get("change_trigger"),
+                             "authorization_reference": payload.get("authorization_reference"),
+                             "package": package})),
             )
             connection.commit()
             return package
