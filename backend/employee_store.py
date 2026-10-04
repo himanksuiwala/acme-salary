@@ -1,5 +1,7 @@
 """SQLite reads and versioned writes for the local employee API."""
 
+import csv
+import io
 import json
 import sqlite3
 from contextlib import closing
@@ -17,6 +19,10 @@ class InvalidReference(Exception):
 
 
 class CompensationConflict(Exception):
+    pass
+
+
+class EmployeeConflict(Exception):
     pass
 
 
@@ -73,8 +79,69 @@ def _like_pattern(value: str) -> str:
     return f"%{escaped}%"
 
 
-def list_employees(*, search: str | None, country: str | None, department: str | None,
-                   role: str | None, status: str | None, page: int, page_size: int) -> dict:
+DIRECTORY_FROM = EMPLOYEE_FROM + """
+LEFT JOIN employee_compensation current_pay ON current_pay.id = (
+    SELECT package.id FROM employee_compensation package
+    WHERE package.employee_id = e.employee_id
+      AND package.effective_from <= date('now')
+      AND (package.effective_to IS NULL OR package.effective_to >= date('now'))
+    ORDER BY package.effective_from DESC, package.id DESC LIMIT 1
+)
+LEFT JOIN currency current_currency ON current_currency.currency_id = current_pay.currency_id
+"""
+
+PACKAGE_STATE = """
+CASE
+  WHEN current_pay.id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM employee_compensation future
+    WHERE future.employee_id = e.employee_id AND future.effective_from > date('now')
+  ) THEN 'SCHEDULED_CHANGE'
+  WHEN current_pay.id IS NOT NULL THEN 'CURRENT'
+  WHEN EXISTS (
+    SELECT 1 FROM employee_compensation future
+    WHERE future.employee_id = e.employee_id AND future.effective_from > date('now')
+  ) THEN 'SCHEDULED'
+  WHEN EXISTS (
+    SELECT 1 FROM employee_compensation previous
+    WHERE previous.employee_id = e.employee_id
+  ) THEN 'PAST_ONLY'
+  ELSE 'NO_PACKAGE'
+END
+"""
+
+DIRECTORY_COLUMNS = EMPLOYEE_COLUMNS + """,
+current_pay.base_pay AS current_base_pay,
+current_pay.pay_frequency AS current_pay_frequency,
+current_currency.currency_code AS current_currency_code,
+current_currency.currency_name AS current_currency_name,
+current_currency.symbol AS current_currency_symbol,
+current_currency.decimal_places AS current_currency_decimal_places,
+(SELECT MIN(future.effective_from) FROM employee_compensation future
+ WHERE future.employee_id = e.employee_id AND future.effective_from > date('now'))
+ AS next_effective_from
+""" + f", {PACKAGE_STATE} AS package_state"
+
+
+def _directory_employee(row: sqlite3.Row) -> dict:
+    employee = _employee_summary(row)
+    employee["package_state"] = row["package_state"]
+    employee["next_effective_from"] = row["next_effective_from"]
+    employee["current_compensation"] = None if row["current_base_pay"] is None else {
+        "base_pay": row["current_base_pay"],
+        "pay_frequency": row["current_pay_frequency"],
+        "currency": {
+            "code": row["current_currency_code"],
+            "name": row["current_currency_name"],
+            "symbol": row["current_currency_symbol"],
+            "decimal_places": row["current_currency_decimal_places"],
+        },
+    }
+    return employee
+
+
+def _directory_where(*, search: str | None, country: str | None,
+                     department: str | None, role: str | None,
+                     status: str | None, package_state: str | None) -> tuple[str, list[str]]:
     predicates = []
     parameters: list[str] = []
     if search and search.strip():
@@ -91,19 +158,174 @@ def list_employees(*, search: str | None, country: str | None, department: str |
         if value is not None:
             predicates.append(f"casefold({column}) = ?")
             parameters.append(value.strip().casefold())
-    where_clause = "WHERE " + " AND ".join(predicates) if predicates else ""
+    if package_state is not None:
+        predicates.append(f"({PACKAGE_STATE}) = ?")
+        parameters.append(package_state)
+    return ("WHERE " + " AND ".join(predicates) if predicates else "", parameters)
+
+
+def list_employees(*, search: str | None, country: str | None, department: str | None,
+                   role: str | None, status: str | None, package_state: str | None = None,
+                   page: int, page_size: int) -> dict:
+    where_clause, parameters = _directory_where(
+        search=search, country=country, department=department, role=role,
+        status=status, package_state=package_state,
+    )
     with closing(_connect()) as connection:
         total = connection.execute(
-            f"SELECT COUNT(*) {EMPLOYEE_FROM} {where_clause}", parameters
+            f"SELECT COUNT(*) {DIRECTORY_FROM} {where_clause}", parameters
         ).fetchone()[0]
         rows = connection.execute(
-            f"""SELECT {EMPLOYEE_COLUMNS} {EMPLOYEE_FROM} {where_clause}
+            f"""SELECT {DIRECTORY_COLUMNS} {DIRECTORY_FROM} {where_clause}
                 ORDER BY e.employee_code COLLATE NOCASE, e.employee_id
                 LIMIT ? OFFSET ?""",
             [*parameters, page_size, (page - 1) * page_size],
         ).fetchall()
     return {"page": page, "page_size": page_size, "total": total,
-            "items": [_employee_summary(row) for row in rows]}
+            "items": [_directory_employee(row) for row in rows]}
+
+
+def get_directory_options() -> dict:
+    with closing(_connect()) as connection:
+        countries = connection.execute(
+            "SELECT country_code AS code, country_name AS name FROM country ORDER BY country_name"
+        ).fetchall()
+        departments = connection.execute(
+            "SELECT department_code AS code, department_name AS name FROM department ORDER BY department_name"
+        ).fetchall()
+        locations = connection.execute(
+            """SELECT l.location_id AS id, l.location_name AS name, l.city,
+                      c.country_code AS country_code, c.country_name AS country_name
+               FROM location l JOIN country c ON c.country_id = l.country_id
+               ORDER BY c.country_name, l.location_name"""
+        ).fetchall()
+        roles = connection.execute(
+            "SELECT DISTINCT job_title FROM employee WHERE job_title IS NOT NULL AND trim(job_title) <> '' ORDER BY job_title"
+        ).fetchall()
+        statuses = connection.execute(
+            "SELECT DISTINCT status FROM employee ORDER BY status"
+        ).fetchall()
+    return {
+        "countries": [dict(row) for row in countries],
+        "departments": [dict(row) for row in departments],
+        "locations": [dict(row) for row in locations],
+        "roles": [row[0] for row in roles],
+        "statuses": [row[0] for row in statuses],
+        "package_states": ["CURRENT", "SCHEDULED_CHANGE", "SCHEDULED", "PAST_ONLY", "NO_PACKAGE"],
+    }
+
+
+def create_employee(payload: dict) -> dict:
+    with closing(_connect()) as connection:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            department = connection.execute(
+                "SELECT department_id FROM department WHERE upper(department_code) = upper(?)",
+                (payload["department_code"],),
+            ).fetchone()
+            location = connection.execute(
+                "SELECT location_id FROM location WHERE location_id = ?",
+                (payload["location_id"],),
+            ).fetchone()
+            if department is None or location is None:
+                raise InvalidReference("Unknown department or location")
+            duplicate = connection.execute(
+                """SELECT 1 FROM employee
+                   WHERE casefold(employee_code) = ? OR casefold(email) = ? LIMIT 1""",
+                (payload["employee_code"].casefold(), payload["email"].casefold()),
+            ).fetchone()
+            if duplicate is not None:
+                raise EmployeeConflict("Employee code or email already exists")
+            cursor = connection.execute(
+                """INSERT INTO employee
+                   (employee_code, first_name, last_name, email, department_id,
+                    location_id, job_title, employment_type, joining_date,
+                    termination_date, status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (payload["employee_code"], payload["first_name"], payload["last_name"],
+                 payload["email"], department["department_id"], location["location_id"],
+                 payload["job_title"], payload["employment_type"],
+                 payload["joining_date"].isoformat(),
+                 payload["termination_date"].isoformat() if payload["termination_date"] else None,
+                 payload["status"]),
+            )
+            employee_id = cursor.lastrowid
+            actor = connection.execute(
+                "SELECT user_id FROM app_user WHERE username = 'Admin@acme.org'"
+            ).fetchone()
+            if actor is None:
+                raise InvalidReference("Development audit actor is unavailable")
+            connection.execute(
+                """INSERT INTO audit_log (user_id, action, entity_type, entity_id, new_values)
+                   VALUES (?, 'EMPLOYEE_CREATED', 'employee', ?, ?)""",
+                (actor["user_id"], employee_id, json.dumps({
+                    "employee_code": payload["employee_code"],
+                    "department_code": payload["department_code"],
+                    "location_id": payload["location_id"],
+                })),
+            )
+            employee = _employee(connection, employee_id)
+            connection.commit()
+        except sqlite3.IntegrityError as error:
+            connection.rollback()
+            raise EmployeeConflict("Employee code or email already exists") from error
+        except Exception:
+            connection.rollback()
+            raise
+    return _employee_summary(employee)
+
+
+def export_directory(*, search: str | None, country: str | None,
+                     department: str | None, role: str | None,
+                     status: str | None, package_state: str | None) -> str:
+    where_clause, parameters = _directory_where(
+        search=search, country=country, department=department, role=role,
+        status=status, package_state=package_state,
+    )
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(("employee_code", "first_name", "last_name", "email", "job_title",
+                     "department_code", "country_code", "location", "status", "package_state",
+                     "current_base_pay_minor_units", "currency_code", "pay_frequency"))
+    with closing(_connect()) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            rows = connection.execute(
+                f"SELECT {DIRECTORY_COLUMNS} {DIRECTORY_FROM} {where_clause} "
+                "ORDER BY e.employee_code COLLATE NOCASE, e.employee_id", parameters,
+            ).fetchall()
+            for row in rows:
+                # Quoting does not stop spreadsheet software evaluating formulas in text cells.
+                def safe(value):
+                    text = "" if value is None else str(value)
+                    return "'" + text if text.lstrip().startswith(("=", "+", "-", "@")) else text
+
+                writer.writerow((safe(row["employee_code"]), safe(row["first_name"]),
+                                 safe(row["last_name"]), safe(row["email"]),
+                                 safe(row["job_title"]), safe(row["department_code"]),
+                                 safe(row["country_code"]), safe(row["location_name"]),
+                                 safe(row["status"]), row["package_state"],
+                                 row["current_base_pay"] if row["current_base_pay"] is not None else "",
+                                 row["current_currency_code"] or "",
+                                 row["current_pay_frequency"] or ""))
+            actor = connection.execute(
+                "SELECT user_id FROM app_user WHERE username = 'Admin@acme.org'"
+            ).fetchone()
+            if actor is None:
+                raise InvalidReference("Development audit actor is unavailable")
+            connection.execute(
+                """INSERT INTO audit_log (user_id, action, entity_type, new_values)
+                   VALUES (?, 'DATA_EXPORTED', 'employee_directory', ?)""",
+                (actor["user_id"], json.dumps({"row_count": len(rows), "filters": {
+                    "search": search, "country": country, "department": department,
+                    "role": role, "status": status, "package_state": package_state,
+                }})),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+    return output.getvalue()
 
 
 PACKAGE_COLUMNS = """

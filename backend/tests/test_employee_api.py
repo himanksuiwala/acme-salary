@@ -13,7 +13,8 @@ from backend.database import connect_database, initialize_database
 from backend.main import app
 
 
-def request(method: str, path: str, *, query: str = "", body: dict | None = None):
+def request(method: str, path: str, *, query: str = "", body: dict | None = None,
+            raw: bool = False):
     payload = json.dumps(body).encode() if body is not None else b""
     messages = []
     sent = False
@@ -38,6 +39,8 @@ def request(method: str, path: str, *, query: str = "", body: dict | None = None
     asyncio.run(app(scope, receive, send))
     status = next(message["status"] for message in messages if message["type"] == "http.response.start")
     content = b"".join(message.get("body", b"") for message in messages if message["type"] == "http.response.body")
+    if raw:
+        return status, content.decode("utf-8")
     return status, json.loads(content) if content else None
 
 
@@ -141,6 +144,58 @@ class EmployeeApiTests(unittest.TestCase):
             self.assertEqual(request("GET", "/api/employees", query=query)[0], 422)
         self.assertEqual(request("GET", "/api/employees", query="page_size=100")[0], 200)
 
+    def test_directory_package_summary_filter_options_and_export(self):
+        listing = request("GET", "/api/employees", query="status=ACTIVE")[1]
+        self.assertEqual(listing["items"][0]["package_state"], "CURRENT")
+        self.assertEqual(listing["items"][0]["current_compensation"]["base_pay"], 8000000)
+        self.assertEqual(listing["items"][0]["current_compensation"]["currency"]["code"], "USD")
+        self.assertEqual(listing["items"][1]["package_state"], "NO_PACKAGE")
+        self.assertIsNone(listing["items"][1]["current_compensation"])
+        self.assertEqual(request("GET", "/api/employees", query="package_state=NO_PACKAGE")[1]["total"], 24)
+        self.assertEqual(request("GET", "/api/employees", query="package_state=invalid")[0], 422)
+
+        options = request("GET", "/api/employees/directory-options")[1]
+        self.assertIn({"code": "GB", "name": "United Kingdom"}, options["countries"])
+        self.assertIn({"code": "HR", "name": "Human Resources"}, options["departments"])
+        self.assertIn("Engineer", options["roles"])
+        self.assertEqual(len(options["locations"]), 2)
+
+        status, csv_text = request("GET", "/api/employees/export", query="search=EMP001", raw=True)
+        self.assertEqual(status, 200)
+        self.assertIn("current_base_pay_minor_units,currency_code,pay_frequency", csv_text)
+        self.assertIn("8000000,USD,ANNUAL", csv_text)
+        self.assertEqual(csv_text.count("EMP001"), 1)
+        self.assertEqual(self.connection.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'DATA_EXPORTED'"
+        ).fetchone()[0], 1)
+
+        with self.connection:
+            self.connection.execute("UPDATE employee SET first_name = '=2+2' WHERE employee_id = 2")
+        _, protected_csv = request("GET", "/api/employees/export", query="search=EMP002", raw=True)
+        self.assertIn("'=2+2", protected_csv)
+
+    def test_employee_creation_validates_refs_duplicates_and_audits(self):
+        payload = {
+            "employee_code": "EMP026", "first_name": "Zoë", "last_name": "Rao",
+            "email": "zoe.rao@example.org", "department_code": "HR", "location_id": 1,
+            "job_title": "HR Manager", "employment_type": "FULL_TIME",
+            "joining_date": "2026-01-01", "status": "ACTIVE",
+        }
+        status, result = request("POST", "/api/employees", body=payload)
+        self.assertEqual(status, 201)
+        self.assertEqual(result["employee"]["employee_code"], "EMP026")
+        self.assertEqual(request("GET", "/api/employees", query="search=EMP026")[1]["total"], 1)
+        self.assertEqual(request("POST", "/api/employees", body=payload)[0], 409)
+        self.assertEqual(request("POST", "/api/employees", body={**payload, "employee_code": "emp026",
+                                                                    "email": "different@example.org"})[0], 409)
+        self.assertEqual(request("POST", "/api/employees", body={**payload, "department_code": "UNKNOWN",
+                                                                    "employee_code": "EMP027"})[0], 422)
+        self.assertEqual(request("POST", "/api/employees", body={**payload, "employee_code": "EMP028",
+                                                                    "email": "bad"})[0], 422)
+        self.assertEqual(self.connection.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'EMPLOYEE_CREATED'"
+        ).fetchone()[0], 1)
+
     def test_large_directory_has_bounded_stable_pages(self):
         with self.connection:
             self.connection.executemany(
@@ -189,6 +244,10 @@ class EmployeeApiTests(unittest.TestCase):
                          (self.today + timedelta(days=29)).isoformat())
         self.assertEqual(len(detail["current"]["allowances"]), 2)
         self.assertEqual(len(detail["scheduled"][0]["allowances"]), 1)
+        directory = request("GET", "/api/employees", query="package_state=SCHEDULED_CHANGE")[1]
+        self.assertEqual(directory["items"][0]["employee_code"], "EMP001")
+        self.assertEqual(directory["items"][0]["next_effective_from"],
+                         (self.today + timedelta(days=30)).isoformat())
         self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM employee_compensation WHERE employee_id=1").fetchone()[0], 3)
         actor, reason = self.connection.execute(
             "SELECT u.username, json_extract(a.new_values, '$.reason') FROM audit_log a JOIN app_user u ON u.user_id=a.user_id"
