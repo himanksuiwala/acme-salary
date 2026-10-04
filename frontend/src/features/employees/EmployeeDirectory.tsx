@@ -27,20 +27,26 @@ const columnNames: Record<Column, string> = {
   pay: 'Current base pay', package: 'Package state',
 }
 
-function FilterSelect({ label, value, values, onChange }: {
+function FilterSelect({ label, value, values, onChange, selectClassName, showLabel = true }: {
   label: string
   value: string
   values: { value: string; label: string }[]
   onChange: (value: string) => void
+  selectClassName?: string
+  showLabel?: boolean
 }) {
+  const selectedLabel = values.find((item) => item.value === value)?.label ?? (value || 'All')
   return (
-    <Select value={value || 'all'} onValueChange={(next) => onChange(next === 'all' ? '' : String(next))}>
-      <SelectTrigger aria-label={label} className="min-w-0"><SelectValue>{(selected: string | null) => selected === 'all' ? `${label}: All` : values.find((item) => item.value === selected)?.label ?? selected}</SelectValue></SelectTrigger>
-      <SelectPopup>
-        <SelectItem value="all">{label}: All</SelectItem>
-        {values.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
-      </SelectPopup>
-    </Select>
+    <div className="flex min-w-0 shrink-0 items-center gap-1.5">
+      {showLabel && <span className="shrink-0 text-[13px] font-medium text-muted-foreground">{label}:</span>}
+      <Select value={value || 'all'} onValueChange={(next) => onChange(next === 'all' ? '' : String(next))}>
+        <SelectTrigger aria-label={label} title={selectedLabel} size="sm" className={`min-w-0 ${selectClassName ?? 'w-full'}`}><SelectValue>{(selected: string | null) => selected === 'all' ? 'All' : values.find((item) => item.value === selected)?.label ?? selected}</SelectValue></SelectTrigger>
+        <SelectPopup>
+          <SelectItem value="all">All</SelectItem>
+          {values.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+        </SelectPopup>
+      </Select>
+    </div>
   )
 }
 
@@ -208,16 +214,18 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
       </div>
 
       <div className="mb-5 rounded-xl border bg-card p-3 sm:p-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.5fr)_repeat(5,minmax(135px,1fr))]">
-          <div className="relative">
+        <div className="space-y-3">
+          <div className="relative max-w-md">
             <MagnifyingGlassIcon aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-muted-foreground" size={18} />
             <Input aria-label="Search employees by name or code" className="[&_input]:pl-9" placeholder="Search by name or code…" type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') changeFilter({ search: searchInput }) }} />
           </div>
-          <FilterSelect label="Country" value={query.country} values={options?.countries.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => changeFilter({ country: value })} />
-          <FilterSelect label="Department" value={query.department} values={options?.departments.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => changeFilter({ department: value })} />
-          <FilterSelect label="Role" value={query.role} values={options?.roles.map((item) => ({ value: item, label: item })) ?? []} onChange={(value) => changeFilter({ role: value })} />
-          <FilterSelect label="Status" value={query.status} values={(options?.statuses ?? ['ACTIVE']).map((item) => ({ value: item, label: statusLabel(item) }))} onChange={(value) => changeFilter({ status: value })} />
-          <FilterSelect label="Package" value={query.package_state} values={(options?.package_states ?? []).map((item) => ({ value: item, label: packageLabels[item] }))} onChange={(value) => changeFilter({ package_state: value })} />
+          <div aria-label="Directory filters" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <FilterSelect label="Country" selectClassName="w-[5.5rem]" value={query.country} values={options?.countries.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => changeFilter({ country: value })} />
+            <FilterSelect label="Department" selectClassName="w-[6.5rem]" value={query.department} values={options?.departments.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => changeFilter({ department: value })} />
+            <FilterSelect label="Role" selectClassName="w-[6.5rem]" value={query.role} values={options?.roles.map((item) => ({ value: item, label: item })) ?? []} onChange={(value) => changeFilter({ role: value })} />
+            <FilterSelect label="Status" selectClassName="w-[5.5rem]" value={query.status} values={(options?.statuses ?? ['ACTIVE']).map((item) => ({ value: item, label: statusLabel(item) }))} onChange={(value) => changeFilter({ status: value })} />
+            <FilterSelect label="Package" selectClassName="w-[7rem]" value={query.package_state} values={(options?.package_states ?? []).map((item) => ({ value: item, label: packageLabels[item] }))} onChange={(value) => changeFilter({ package_state: value })} />
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -254,7 +262,7 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
 
       {data && data.total > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card px-4 py-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground"><span>Rows per page</span><div className="w-20"><FilterSelect label="Rows" value={String(query.page_size)} values={[20, 50, 100].map((size) => ({ value: String(size), label: String(size) }))} onChange={(value) => changeFilter({ page_size: Number(value) })} /></div><span className="ml-2 tabular-nums">Page {data.page} of {totalPages}</span></div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><span>Rows per page</span><FilterSelect label="Rows" showLabel={false} selectClassName="w-20" value={String(query.page_size)} values={[20, 50, 100].map((size) => ({ value: String(size), label: String(size) }))} onChange={(value) => changeFilter({ page_size: Number(value) })} /><span className="ml-2 tabular-nums">Page {data.page} of {totalPages}</span></div>
           <Pagination className="mx-0 w-auto"><PaginationContent>
             <PaginationItem><Button aria-label="Previous page" disabled={data.page <= 1} size="sm" variant="ghost" onClick={() => changeFilter({ page: data.page - 1 })}>Previous</Button></PaginationItem>
             {Array.from(new Set([1, data.page - 1, data.page, data.page + 1, totalPages].filter((page) => page >= 1 && page <= totalPages))).sort((a, b) => a - b).map((page) => <PaginationItem key={page}><Button aria-label={`Page ${page}`} aria-current={page === data.page ? 'page' : undefined} size="icon-sm" variant={page === data.page ? 'outline' : 'ghost'} onClick={() => changeFilter({ page })}>{page}</Button></PaginationItem>)}
