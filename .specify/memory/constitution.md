@@ -42,6 +42,17 @@ automated checks using the repository's `unittest` conventions. Frontend changes
 MUST pass the existing build and lint commands. Reviews MUST compare the resulting
 behavior with the feature spec and record any unresolved gaps.
 
+### VI. Simplicity with Clear Boundaries
+
+Implement the simplest design that satisfies the current specification. Modules
+MUST have clear responsibilities, with dependencies and data flow easy to follow.
+Introduce an abstraction, layer, or dependency only when it solves a current
+problem, removes meaningful duplication, or isolates a known point of change.
+Code MUST NOT add frameworks or configuration for hypothetical requirements. A
+reviewer MUST be able to explain each nontrivial abstraction and locate the code
+responsible for a behavior. Clear boundaries let the system grow without making
+unrelated code harder to understand or change.
+
 ## Project Constraints
 
 The current stack is FastAPI, SQLite, and Vite with React and TypeScript. Plans
@@ -73,4 +84,4 @@ that needs them. Use semantic versioning for this document: major for removed or
 redefined principles, minor for added or materially expanded rules, and patch for
 clarifications. Review compliance and any exceptions when accepting a feature.
 
-**Version**: 1.0.1 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04
+**Version**: 1.1.0 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04

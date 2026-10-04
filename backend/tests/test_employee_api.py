@@ -1,0 +1,249 @@
+"""HTTP-level checks for directory and versioned compensation behavior."""
+
+import asyncio
+import json
+import os
+import tempfile
+import unittest
+from datetime import timedelta, timezone, datetime
+from pathlib import Path
+from unittest.mock import patch
+
+from backend.database import connect_database, initialize_database
+from backend.main import app
+
+
+def request(method: str, path: str, *, query: str = "", body: dict | None = None):
+    payload = json.dumps(body).encode() if body is not None else b""
+    messages = []
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if not sent:
+            sent = True
+            return {"type": "http.request", "body": payload, "more_body": False}
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        messages.append(message)
+
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": method, "scheme": "http", "server": ("test", 80),
+        "client": ("127.0.0.1", 12345), "path": path,
+        "raw_path": path.encode(), "query_string": query.encode(),
+        "headers": [(b"content-type", b"application/json")],
+    }
+    asyncio.run(app(scope, receive, send))
+    status = next(message["status"] for message in messages if message["type"] == "http.response.start")
+    content = b"".join(message.get("body", b"") for message in messages if message["type"] == "http.response.body")
+    return status, json.loads(content) if content else None
+
+
+class EmployeeApiTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        env = patch.dict(os.environ, {"DB_PATH": str(Path(directory.name) / "test.db")})
+        env.start()
+        self.addCleanup(env.stop)
+        initialize_database()
+        self.connection = connect_database()
+        self.addCleanup(self.connection.close)
+        self.today = datetime.now(timezone.utc).date()
+        with self.connection:
+            self.connection.executemany(
+                "INSERT INTO currency (currency_code, currency_name, symbol, decimal_places) VALUES (?, ?, ?, 2)",
+                [("USD", "US Dollar", "$"), ("GBP", "Pound Sterling", "£")],
+            )
+            self.connection.executemany(
+                "INSERT INTO country (country_code, country_name, default_currency_id) VALUES (?, ?, ?)",
+                [("US", "United States", 1), ("GB", "United Kingdom", 2)],
+            )
+            self.connection.executemany(
+                "INSERT INTO location (country_id, location_name, city) VALUES (?, ?, ?)",
+                [(1, "New York", "New York"), (2, "London", "London")],
+            )
+            self.connection.executemany(
+                "INSERT INTO department (department_code, department_name) VALUES (?, ?)",
+                [("HR", "Human Resources"), ("ENG", "Engineering")],
+            )
+            self.connection.executemany(
+                "INSERT INTO allowance_type (code, name) VALUES (?, ?)",
+                [("MEAL", "Meal"), ("TRANSPORT", "Transport")],
+            )
+            for number in range(1, 26):
+                first, last = ("Ana", "Singh") if number == 1 else ("Bob", f"Person{number:02d}")
+                department_id = 1 if number == 1 else 2
+                location_id = 1 if number == 1 else 2
+                job_title = "Analyst" if number == 1 else "Engineer"
+                status = "ACTIVE" if number < 25 else "INACTIVE"
+                self.connection.execute(
+                    """INSERT INTO employee (employee_code, first_name, last_name, email,
+                       department_id, location_id, job_title, joining_date, status)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, '2020-01-01', ?)""",
+                    (f"EMP{number:03d}", first, last, f"person{number}@example.org",
+                     department_id, location_id, job_title, status),
+                )
+            prior_start = self.today - timedelta(days=400)
+            prior_end = self.today - timedelta(days=2)
+            current_start = self.today - timedelta(days=1)
+            self.connection.execute(
+                """INSERT INTO employee_compensation
+                   (employee_id, base_pay, currency_id, pay_frequency, effective_from, effective_to)
+                   VALUES (1, 7000000, 1, 'ANNUAL', ?, ?)""",
+                (prior_start.isoformat(), prior_end.isoformat()),
+            )
+            self.connection.execute(
+                """INSERT INTO employee_compensation
+                   (employee_id, base_pay, currency_id, pay_frequency, effective_from)
+                   VALUES (1, 8000000, 1, 'ANNUAL', ?)""",
+                (current_start.isoformat(),),
+            )
+            self.connection.executemany(
+                "INSERT INTO employee_allowance (compensation_id, allowance_type_id, amount, frequency) VALUES (?, ?, ?, 'MONTHLY')",
+                [(1, 1, 10000), (1, 2, 5000), (2, 1, 12000), (2, 2, 6000)],
+            )
+
+    def new_package(self, **changes):
+        result = {
+            "base_pay": 9000000, "variable_pay": 500000, "currency_code": "usd",
+            "pay_frequency": "ANNUAL", "effective_from": (self.today + timedelta(days=30)).isoformat(),
+            "reason": "Annual review",
+            "allowances": [{"type_code": "meal", "amount": 15000, "frequency": "MONTHLY"}],
+        }
+        result.update(changes)
+        return result
+
+    def test_list_search_filters_and_pagination(self):
+        status, result = request("GET", "/api/employees")
+        self.assertEqual(status, 200)
+        self.assertEqual((result["total"], result["page"], result["page_size"]), (25, 1, 20))
+        self.assertEqual([item["employee_code"] for item in result["items"]],
+                         [f"EMP{i:03d}" for i in range(1, 21)])
+        status, result = request("GET", "/api/employees", query="page=2")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(result["items"]), 5)
+        status, result = request("GET", "/api/employees", query="search=ana&country=us&department=hr&role=analyst&status=active")
+        self.assertEqual(status, 200)
+        self.assertEqual([item["employee_code"] for item in result["items"]], ["EMP001"])
+        self.assertEqual(result["items"][0]["country"]["code"], "US")
+        for term in ("emp001", "SINGH"):
+            self.assertEqual(request("GET", "/api/employees", query=f"search={term}")[1]["total"], 1)
+        self.assertEqual(request("GET", "/api/employees", query="country=GB&department=HR")[1]["total"], 0)
+        self.assertEqual(request("GET", "/api/employees", query="search=%25")[1]["total"], 0)
+        self.assertEqual(request("GET", "/api/employees", query="page=99")[1]["total"], 25)
+        self.assertEqual(request("GET", "/api/employees", query="page=99")[1]["items"], [])
+
+    def test_list_rejects_invalid_pagination(self):
+        for query in ("page=0", "page_size=0", "page_size=101", "page=foo"):
+            self.assertEqual(request("GET", "/api/employees", query=query)[0], 422)
+        self.assertEqual(request("GET", "/api/employees", query="page_size=100")[0], 200)
+
+    def test_large_directory_has_bounded_stable_pages(self):
+        with self.connection:
+            self.connection.executemany(
+                """INSERT INTO employee (employee_code, first_name, last_name, email,
+                   department_id, location_id, job_title, joining_date, status)
+                   VALUES (?, 'Test', 'Person', ?, 2, 2, 'Engineer', '2020-01-01', 'ACTIVE')""",
+                ((f"ZZZ{number:05d}", f"large{number}@example.org")
+                 for number in range(26, 10001)),
+            )
+        first = request("GET", "/api/employees", query="page=2&page_size=100")[1]
+        repeated = request("GET", "/api/employees", query="page=2&page_size=100")[1]
+        next_page = request("GET", "/api/employees", query="page=3&page_size=100")[1]
+        self.assertEqual(first["total"], 10000)
+        self.assertEqual(len(first["items"]), 100)
+        self.assertEqual([item["employee_code"] for item in first["items"]],
+                         [item["employee_code"] for item in repeated["items"]])
+        self.assertTrue({item["employee_code"] for item in first["items"]}.isdisjoint(
+            {item["employee_code"] for item in next_page["items"]}))
+
+    def test_detail_classifies_history_current_scheduled_and_empty(self):
+        status, result = request("GET", "/api/employees/1/compensation")
+        self.assertEqual(status, 200)
+        self.assertEqual(result["employee"]["employee_code"], "EMP001")
+        self.assertEqual(result["current"]["base_pay"], 8000000)
+        self.assertEqual(result["current"]["currency"]["code"], "USD")
+        self.assertEqual(len(result["current"]["allowances"]), 2)
+        self.assertEqual(result["history"][0]["base_pay"], 7000000)
+        self.assertEqual(result["scheduled"], [])
+        self.assertIsNone(result["current"]["change_reason"])
+        status, empty = request("GET", "/api/employees/2/compensation")
+        self.assertEqual(status, 200)
+        self.assertIsNone(empty["current"])
+        self.assertEqual(empty["history"], [])
+        self.assertEqual(request("GET", "/api/employees/999/compensation")[0], 404)
+
+    def test_create_package_preserves_history_allowances_and_audit(self):
+        status, result = request("POST", "/api/employees/1/compensation", body=self.new_package())
+        self.assertEqual(status, 201, result)
+        self.assertEqual(result["compensation"]["base_pay"], 9000000)
+        self.assertEqual(result["compensation"]["change_reason"], "Annual review")
+        self.assertEqual([a["type_code"] for a in result["compensation"]["allowances"]], ["MEAL"])
+        detail = request("GET", "/api/employees/1/compensation")[1]
+        self.assertEqual(detail["current"]["base_pay"], 8000000)
+        self.assertEqual(detail["scheduled"][0]["base_pay"], 9000000)
+        self.assertEqual(detail["current"]["effective_to"],
+                         (self.today + timedelta(days=29)).isoformat())
+        self.assertEqual(len(detail["current"]["allowances"]), 2)
+        self.assertEqual(len(detail["scheduled"][0]["allowances"]), 1)
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM employee_compensation WHERE employee_id=1").fetchone()[0], 3)
+        actor, reason = self.connection.execute(
+            "SELECT u.username, json_extract(a.new_values, '$.reason') FROM audit_log a JOIN app_user u ON u.user_id=a.user_id"
+        ).fetchone()
+        self.assertEqual((actor, reason), ("Admin@acme.org", "Annual review"))
+
+    def test_create_rejects_bad_input_without_partial_writes(self):
+        bad_cases = [
+            (self.new_package(base_pay=-1), 422),
+            (self.new_package(base_pay="9000000"), 422),
+            (self.new_package(base_pay=9223372036854775808), 422),
+            (self.new_package(reason="  "), 422),
+            (self.new_package(currency_code="XXX"), 422),
+            (self.new_package(pay_frequency="WEEKLY"), 422),
+            (self.new_package(effective_from=1793491200), 422),
+            (self.new_package(effective_from="20261101"), 422),
+            (self.new_package(allowances=[{"type_code": "NOPE", "amount": 5, "frequency": "MONTHLY"}]), 422),
+            (self.new_package(allowances=[{"type_code": "MEAL", "amount": 5, "frequency": "MONTHLY"}, {"type_code": "meal", "amount": 6, "frequency": "MONTHLY"}]), 422),
+            (self.new_package(effective_from=(self.today - timedelta(days=1)).isoformat()), 409),
+            (self.new_package(effective_from=(self.today - timedelta(days=2)).isoformat()), 409),
+        ]
+        before = [self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                  for table in ("employee_compensation", "employee_allowance", "audit_log")]
+        for body, expected in bad_cases:
+            with self.subTest(body=body):
+                self.assertEqual(request("POST", "/api/employees/1/compensation", body=body)[0], expected)
+        self.assertEqual(request("POST", "/api/employees/999/compensation", body=self.new_package())[0], 404)
+        after = [self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                 for table in ("employee_compensation", "employee_allowance", "audit_log")]
+        self.assertEqual(before, after)
+        self.assertIsNone(self.connection.execute("SELECT effective_to FROM employee_compensation WHERE id=2").fetchone()[0])
+
+    def test_first_package_and_same_date_conflict(self):
+        initial = self.new_package(effective_from=self.today.isoformat(), allowances=[])
+        self.assertEqual(request("POST", "/api/employees/2/compensation", body=initial)[0], 201)
+        self.assertEqual(request("POST", "/api/employees/2/compensation", body=initial)[0], 409)
+        self.assertEqual(request("GET", "/api/employees/2/compensation")[1]["current"]["base_pay"], 9000000)
+
+    def test_effective_today_and_following_future_version(self):
+        today_package = self.new_package(effective_from=self.today.isoformat())
+        self.assertEqual(request("POST", "/api/employees/1/compensation", body=today_package)[0], 201)
+        detail = request("GET", "/api/employees/1/compensation")[1]
+        self.assertEqual(detail["current"]["base_pay"], 9000000)
+        self.assertEqual(detail["history"][0]["base_pay"], 8000000)
+        self.assertEqual(detail["history"][0]["effective_to"],
+                         (self.today - timedelta(days=1)).isoformat())
+
+        later = self.new_package(base_pay=9500000, effective_from=(self.today + timedelta(days=30)).isoformat())
+        self.assertEqual(request("POST", "/api/employees/1/compensation", body=later)[0], 201)
+        detail = request("GET", "/api/employees/1/compensation")[1]
+        self.assertEqual(detail["current"]["effective_to"],
+                         (self.today + timedelta(days=29)).isoformat())
+        self.assertEqual(detail["scheduled"][0]["base_pay"], 9500000)
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0], 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

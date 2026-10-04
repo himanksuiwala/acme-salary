@@ -1,6 +1,6 @@
 # Employee Salary Management
 
-This starter connects a FastAPI backend, a SQLite database, and a Vite React/TypeScript frontend. The [requirements](artifacts/requirements.md) and [database design](artifacts/db-schema-design.md) describe the planned salary-management features. The backend creates the ten designed tables and their relationships; the health check is the only API endpoint so far.
+This starter connects a FastAPI backend, a SQLite database, and a Vite React/TypeScript frontend. The [requirements](artifacts/requirements.md) and [database design](artifacts/db-schema-design.md) describe the planned salary-management features. The backend creates the ten designed tables and exposes health, employee directory, compensation detail, and versioned compensation update endpoints.
 
 ## Requirements
 
@@ -48,6 +48,23 @@ npm --prefix frontend run dev
 Open the local URL printed by Vite. The page calls `/api/health` through Vite's development proxy. A successful check returns `{"status":"ok","database":"ok"}` after SQLite executes a query. If SQLite cannot be reached, the API returns HTTP 503 and the page shows the database as unavailable. FastAPI's interactive API documentation is at <http://127.0.0.1:8000/docs>.
 
 Run the database checks with `backend/.venv/bin/python -m unittest discover -s backend/tests -v`.
+
+## Employee and compensation API
+
+The API exposes:
+
+- `GET /api/employees` with optional `search`, `country`, `department`, `role`, `status`, `page`, and `page_size` query parameters. Search matches partial names and employee codes without case sensitivity. Country and department use codes; `role` means employee job title. Filters combine with AND. Results are ordered by employee code, with 20 items per page by default and a maximum of 100.
+- `GET /api/employees/{employee_id}/compensation` with the employee summary, package effective today (UTC), past packages, scheduled packages, and each package's allowances.
+- `POST /api/employees/{employee_id}/compensation` to create a complete new package with `base_pay`, optional `variable_pay`, `currency_code`, `pay_frequency`, `effective_from`, `reason`, and the full desired `allowances` list. Amounts are integer minor units. Old pay and allowances remain in history; the prior period is closed if necessary. The write and audit event commit together.
+
+See the [API contract](specs/001-employee-compensation-api/contracts/employee-compensation-api.md) for request and response shapes and error codes. A quick read example:
+
+```bash
+curl 'http://127.0.0.1:8000/api/employees?country=IN&page=1&page_size=20'
+curl 'http://127.0.0.1:8000/api/employees/1/compensation'
+```
+
+**Local development only:** These salary endpoints have no authentication or authorization. Successful changes are temporarily attributed to the seeded `Admin@acme.org` user for auditing; this does not identify the actual caller. The intended human access role is `NORMAL_USER` for HR platform users; `SYSTEM` is reserved for automated configuration work. Add real authentication and role enforcement before exposing this API beyond a local development environment.
 
 ## Spec-driven workflow
 
