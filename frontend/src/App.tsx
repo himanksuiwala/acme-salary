@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetPopup, SheetTitle } from '@/components/ui/sheet'
 import { EmployeeDirectory } from '@/features/employees/EmployeeDirectory'
 import { EmployeeProfile } from '@/features/employees/EmployeeProfile'
+import { CompensationForm } from '@/features/employees/CompensationForm'
 import type { DirectoryQuery } from '@/features/employees/api'
 
-type LocationState = { query: DirectoryQuery; employeeId: number | null }
+type LocationState = { query: DirectoryQuery; employeeId: number | null; compensationForm: boolean }
 
 function readLocation(): LocationState {
   const params = new URLSearchParams(window.location.search)
@@ -26,12 +27,13 @@ function readLocation(): LocationState {
       page_size: [20, 50, 100].includes(pageSize) ? pageSize : 20,
     },
     employeeId: Number.isInteger(employeeId) && employeeId > 0 ? employeeId : null,
+    compensationForm: Number.isInteger(employeeId) && employeeId > 0 && params.get('view') === 'new-package',
   }
 }
 
 function writeLocation(state: LocationState, replace = false) {
   const params = new URLSearchParams()
-  const { query, employeeId } = state
+  const { query, employeeId, compensationForm } = state
   for (const key of ['search', 'country', 'department', 'role', 'package_state'] as const) {
     if (query[key]) params.set(key, query[key])
   }
@@ -39,6 +41,7 @@ function writeLocation(state: LocationState, replace = false) {
   if (query.page > 1) params.set('page', String(query.page))
   if (query.page_size !== 20) params.set('page_size', String(query.page_size))
   if (employeeId) params.set('employee', String(employeeId))
+  if (employeeId && compensationForm) params.set('view', 'new-package')
   const url = `${window.location.pathname}${params.size ? `?${params}` : ''}`
   window.history[replace ? 'replaceState' : 'pushState'](null, '', url)
 }
@@ -95,6 +98,7 @@ function App() {
     const next: LocationState = {
       query: { ...previous.query, ...patch, page: patch.page ?? (filterChanged ? 1 : previous.query.page) },
       employeeId: null,
+      compensationForm: false,
     }
     locationRef.current = next
     setLocation(next)
@@ -102,7 +106,7 @@ function App() {
   }, [])
 
   const openEmployee = useCallback((employeeId: number) => {
-    const next = { ...locationRef.current, employeeId }
+    const next = { ...locationRef.current, employeeId, compensationForm: false }
     locationRef.current = next
     setLocation(next)
     writeLocation(next)
@@ -112,10 +116,20 @@ function App() {
   const openDirectory = useCallback(() => {
     setNavOpen(false)
     if (locationRef.current.employeeId === null) return
-    const next = { ...locationRef.current, employeeId: null }
+    const next = { ...locationRef.current, employeeId: null, compensationForm: false }
     locationRef.current = next
     setLocation(next)
     writeLocation(next)
+  }, [])
+
+  const openCompensationForm = useCallback(() => {
+    const next = { ...locationRef.current, compensationForm: true }
+    locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
+  }, [])
+
+  const closeCompensationForm = useCallback(() => {
+    const next = { ...locationRef.current, compensationForm: false }
+    locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
   }, [])
 
   return (
@@ -125,7 +139,7 @@ function App() {
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <Button className="lg:hidden" aria-label="Open navigation" size="icon-sm" variant="ghost" onClick={() => setNavOpen(true)}><ListIcon aria-hidden="true" size={20} /></Button>
-            <span className="truncate text-sm text-muted-foreground">Workspace <span className="mx-2 text-neutral-300">/</span> <span className="font-medium text-foreground">{location.employeeId ? 'Employee profile' : 'Employees'}</span></span>
+            <span className="truncate text-sm text-muted-foreground">Workspace <span className="mx-2 text-neutral-300">/</span> <span className="font-medium text-foreground">{location.compensationForm ? 'New compensation package' : location.employeeId ? 'Employee profile' : 'Employees'}</span></span>
           </div>
           <Badge variant="outline" className="shrink-0">Local development</Badge>
         </header>
@@ -133,7 +147,10 @@ function App() {
           <WarningCircleIcon aria-hidden="true" className="mt-0.5 shrink-0" size={15} />Employee and salary data are visible in this local development build. Access controls are required before deployment.
         </div>
         <main>
-          {location.employeeId ? <EmployeeProfile key={location.employeeId} employeeId={location.employeeId} onBack={openDirectory} /> : <EmployeeDirectory query={location.query} updateQuery={updateQuery} onOpenEmployee={openEmployee} />}
+          {location.employeeId ? location.compensationForm
+            ? <CompensationForm key={location.employeeId} employeeId={location.employeeId} onCancel={closeCompensationForm} onSaved={closeCompensationForm} />
+            : <EmployeeProfile key={location.employeeId} employeeId={location.employeeId} onBack={openDirectory} onRecordCompensation={openCompensationForm} />
+            : <EmployeeDirectory query={location.query} updateQuery={updateQuery} onOpenEmployee={openEmployee} />}
         </main>
       </div>
       <Sheet open={navOpen} onOpenChange={setNavOpen}>

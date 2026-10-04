@@ -19,7 +19,10 @@ export type Employee = {
   last_name: string
   email: string
   job_title: string | null
+  employment_type: string | null
   status: string
+  joining_date: string
+  termination_date: string | null
   department: { code: string; name: string }
   location: { id: number; name: string; city: string | null }
   country: { code: string; name: string }
@@ -33,6 +36,9 @@ export type Employee = {
 }
 
 export type EmployeeSummary = Omit<Employee, 'current_compensation' | 'package_state' | 'next_effective_from'>
+export type ProfileEmployee = EmployeeSummary & {
+  manager: { employee_id: number; employee_code: string; first_name: string; last_name: string } | null
+}
 
 export type DirectoryResponse = {
   page: number
@@ -42,12 +48,14 @@ export type DirectoryResponse = {
 }
 
 export type DirectoryOptions = {
-  countries: { code: string; name: string }[]
+  countries: { code: string; name: string; default_currency_code: string }[]
   departments: { code: string; name: string }[]
   locations: { id: number; name: string; city: string | null; country_code: string; country_name: string }[]
   roles: string[]
   statuses: string[]
   package_states: PackageState[]
+  currencies: Currency[]
+  allowance_types: { code: string; name: string }[]
 }
 
 export type DirectoryQuery = {
@@ -74,10 +82,22 @@ export type CompensationPackage = {
 }
 
 export type EmployeeDetail = {
-  employee: EmployeeSummary
+  employee: ProfileEmployee
+  as_of: string
   current: CompensationPackage | null
   scheduled: CompensationPackage[]
   history: CompensationPackage[]
+  activity: { id: number; action: string; created_at: string; actor: string | null; reason: string | null; effective_from: string | null }[]
+}
+
+export type NewCompensation = {
+  base_pay: number
+  variable_pay: number | null
+  currency_code: string
+  pay_frequency: 'ANNUAL' | 'MONTHLY' | 'HOURLY'
+  effective_from: string
+  reason: string
+  allowances: { type_code: string; amount: number; frequency: 'ANNUAL' | 'MONTHLY' | 'HOURLY' }[]
 }
 
 export type NewEmployee = {
@@ -91,6 +111,11 @@ export type NewEmployee = {
   employment_type: string | null
   joining_date: string
   status: string
+}
+
+export type EmployeeEdit = Pick<EmployeeSummary, 'first_name' | 'last_name' | 'email' | 'job_title' | 'employment_type' | 'status' | 'termination_date'> & {
+  department_code: string
+  location_id: number
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -126,8 +151,29 @@ export async function getDirectoryOptions(signal?: AbortSignal): Promise<Directo
   return parseResponse<DirectoryOptions>(await fetch('/api/employees/directory-options', { signal }))
 }
 
-export async function getEmployeeDetail(employeeId: number, signal?: AbortSignal): Promise<EmployeeDetail> {
-  return parseResponse<EmployeeDetail>(await fetch(`/api/employees/${employeeId}/compensation`, { signal }))
+export async function getEmployeeDetail(employeeId: number, asOf?: string, signal?: AbortSignal): Promise<EmployeeDetail> {
+  const params = asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''
+  return parseResponse<EmployeeDetail>(await fetch(`/api/employees/${employeeId}/compensation${params}`, { signal }))
+}
+
+export async function createCompensation(employeeId: number, packageInput: NewCompensation): Promise<CompensationPackage> {
+  const result = await parseResponse<{ compensation: CompensationPackage }>(await fetch(`/api/employees/${employeeId}/compensation`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(packageInput),
+  }))
+  return result.compensation
+}
+
+export async function downloadEmployeeCompensation(employeeId: number, asOf: string): Promise<void> {
+  const response = await fetch(`/api/employees/${employeeId}/compensation/export?as_of=${encodeURIComponent(asOf)}`)
+  if (!response.ok) { await parseResponse<never>(response); return }
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `employee-${employeeId}-compensation.csv`
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 
 export async function createEmployee(employee: NewEmployee): Promise<EmployeeSummary> {
@@ -135,6 +181,13 @@ export async function createEmployee(employee: NewEmployee): Promise<EmployeeSum
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(employee),
+  }))
+  return result.employee
+}
+
+export async function updateEmployee(employeeId: number, changes: EmployeeEdit): Promise<EmployeeSummary> {
+  const result = await parseResponse<{ employee: EmployeeSummary }>(await fetch(`/api/employees/${employeeId}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes),
   }))
   return result.employee
 }
