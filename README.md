@@ -58,6 +58,10 @@ can install the CLI with `uv tool install specify-cli`, then run `specify versio
 `specify integration status` from the repository root. The project was initialized
 with Spec Kit 1.0.10. Open a new Codex session in this directory to load its skills.
 
+Stay on the existing Git branch for every feature. Do not create or switch to a
+separate feature branch. Spec Kit keeps each feature's work under its own numbered
+`specs/` directory, so branch changes are unnecessary for this workflow.
+
 For each bounded feature, use these skills in Codex chat, reviewing each artifact
 before moving on:
 

@@ -53,9 +53,12 @@ spec MUST state where planned and current behavior differ.
 
 ## Development Workflow
 
-For a bounded feature, create `spec.md`, resolve material ambiguity, then produce
-`plan.md` and `tasks.md` before implementation. Use Spec Kit analysis when artifacts
-need a consistency check, and convergence after implementation to record remaining
+All feature work MUST remain on the currently checked-out branch. The workflow
+MUST NOT create or switch to a separate branch for each feature; the feature's
+`specs/` directory identifies its artifacts. For a bounded feature, create
+`spec.md`, resolve material ambiguity, then produce `plan.md` and `tasks.md`
+before implementation. Use Spec Kit analysis when artifacts need a consistency
+check, and convergence after implementation to record remaining
 gaps. Review generated artifacts as decisions, not as authority over observed code.
 Run relevant checks before marking tasks complete: backend
 `backend/.venv/bin/python -m unittest discover -s backend/tests -v`, frontend
@@ -70,4 +73,4 @@ that needs them. Use semantic versioning for this document: major for removed or
 redefined principles, minor for added or materially expanded rules, and patch for
 clarifications. Review compliance and any exceptions when accepting a feature.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04
+**Version**: 1.0.1 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04
