@@ -1,0 +1,28 @@
+.git
+.gitignore
+.agents
+.specify
+.DS_Store
+
+# Frontend build artifacts and node_modules
+frontend/node_modules
+node_modules
+frontend/dist
+
+# Python virtual environment and caches
+backend/.venv
+.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Local databases and secrets
+*.db
+backend/data/*.db
+.env
+backend/.env
+
+# Local exports and documentation artifacts
+exports
+artifacts
