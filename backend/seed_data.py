@@ -24,7 +24,7 @@ from backend.fx_reference import seed_usd_reference_rates
 
 DEFAULT_AS_OF = date(2026, 10, 1)
 DEFAULT_SEED = 42
-EMPLOYEE_COUNT = 50
+EMPLOYEE_COUNT = 10_000
 
 
 class CountryProfile(NamedTuple):
@@ -136,10 +136,13 @@ def _email_part(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", ".", ascii_value.lower()).strip(".") or "employee"
 
 
-def generate_dataset(seed: int = DEFAULT_SEED, as_of: date = DEFAULT_AS_OF) -> Dataset:
-    """Return 50 related rows using fixed IDs, local salaries, and seeded Faker names."""
+def generate_dataset(seed: int = DEFAULT_SEED, as_of: date = DEFAULT_AS_OF, employee_count: int = EMPLOYEE_COUNT) -> Dataset:
+    """Return related rows using fixed IDs, local salaries, and seeded Faker names."""
     if as_of.year < 2010:
         raise ValueError("as_of must be in 2010 or later")
+    minimum_count = len(COUNTRIES) * len(DEPARTMENTS)
+    if employee_count < minimum_count:
+        raise ValueError(f"employee_count must be at least {minimum_count} to cover every country and department")
 
     rng = random.Random(seed)
     fakers = [Faker(country.locale) for country in COUNTRIES]
@@ -206,7 +209,7 @@ def generate_dataset(seed: int = DEFAULT_SEED, as_of: date = DEFAULT_AS_OF) -> D
 
     compensation_id = 1
     employee_allowance_id = 1
-    for index in range(EMPLOYEE_COUNT):
+    for index in range(employee_count):
         employee_id = index + 1
         country_index = index % len(COUNTRIES)
         department_index = (index // len(COUNTRIES)) % len(DEPARTMENTS)
@@ -437,6 +440,8 @@ def main() -> None:
     parser.add_argument("--format", required=True, choices=("sqlite", "csv", "xlsx"))
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--as-of", type=date.fromisoformat, default=DEFAULT_AS_OF)
+    parser.add_argument("--employees", type=int, default=EMPLOYEE_COUNT,
+                        help=f"Number of employees to generate; minimum {len(COUNTRIES) * len(DEPARTMENTS)}")
     parser.add_argument("--output", type=Path, help="CSV directory or XLSX file")
     parser.add_argument("--db-path", type=Path, help="SQLite file; defaults to DB_PATH")
     arguments = parser.parse_args()
@@ -447,7 +452,7 @@ def main() -> None:
         parser.error("--db-path is only for sqlite")
 
     try:
-        dataset = generate_dataset(arguments.seed, arguments.as_of)
+        dataset = generate_dataset(arguments.seed, arguments.as_of, arguments.employees)
         if arguments.format == "sqlite":
             path = (arguments.db_path.expanduser().resolve() if arguments.db_path
                     else database_path())

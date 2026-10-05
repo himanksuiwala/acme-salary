@@ -140,7 +140,7 @@ other contributors in the relevant feature spec.
 
 ## Generate sample data
 
-The seed generator creates 50 employees across India, the United States, the United Kingdom, Germany, and Singapore, with ten employees per country. Salary bands depend on country, department, and role. The figures are illustrative synthetic amounts, not compensation benchmarks. Each employee has one prior and one current annual compensation package, and each package has one to three monthly allowances. Only the two existing app users remain; no audit entries are generated.
+The seed generator creates 10,000 employees across India, the United States, the United Kingdom, Germany, and Singapore, with 2,000 employees per country. Salary bands depend on country, department, and role. The figures are illustrative synthetic amounts, not compensation benchmarks. Each employee has one prior and one current annual compensation package, and each package has one to three monthly allowances. Existing app users remain; no audit entries are generated for seeded business data.
 
 Run one of these commands from the repository root:
 
@@ -152,7 +152,7 @@ backend/.venv/bin/python -m backend.seed_data --format sqlite
 
 CSV creates eight files in `exports/seed-data/`; Excel creates `exports/seed-data.xlsx` with one sheet per generated table. Use `--output PATH` to choose another export destination. SQLite seeds `DB_PATH` (default `backend/data/app.db`); use `--db-path PATH` to target a separate database. SQLite mode stops if any of the eight business tables already contains data. Export paths must not already exist.
 
-All modes default to Faker seed `42` and an as-of date of `2026-10-01`; use `--seed NUMBER` and `--as-of YYYY-MM-DD` to change them. Faker is pinned in `backend/requirements.txt` so the generated records stay reproducible across installs. CSV and Excel use the same explicit IDs and integer minor-unit amounts as SQLite.
+All modes default to Faker seed `42`, 10,000 employees, and an as-of date of `2026-10-01`; use `--seed NUMBER`, `--employees NUMBER`, and `--as-of YYYY-MM-DD` to change them. The minimum employee count is 25 so every country and department is represented. Faker is pinned in `backend/requirements.txt` so the generated records stay reproducible across installs. CSV and Excel use the same explicit IDs and integer minor-unit amounts as SQLite.
 
 ## Project layout
 
