@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   ArrowLeftIcon,
-  CalendarBlankIcon,
   CaretDownIcon,
   DownloadSimpleIcon,
   PencilSimpleIcon,
@@ -9,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import { Badge } from "@/components/ui/badge";
 import { DatePicker } from "@/components/product/DatePicker";
+import { ContextInfo } from "@/components/product/ContextInfo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -27,7 +27,7 @@ function annual(amount: number, frequency: string): number | null {
   return frequency === "ANNUAL" ? amount : frequency === "MONTHLY" ? amount * 12 : null;
 }
 
-function PackageDetails({ item }: { item: CompensationPackage }) {
+function PackageDetails({ item, condensed = false }: { item: CompensationPackage; condensed?: boolean }) {
   const base = annual(item.base_pay, item.pay_frequency);
   const variable = item.variable_pay === null ? null : annual(item.variable_pay, item.pay_frequency);
   const allowances = item.allowances.map((value) => annual(value.amount, value.frequency));
@@ -37,13 +37,13 @@ function PackageDetails({ item }: { item: CompensationPackage }) {
       : null;
   return (
     <div className="space-y-5">
-      <div className="grid gap-5 sm:grid-cols-2">
-        <div>
+      <div className={condensed ? "grid gap-5" : "grid gap-5 sm:grid-cols-2"}>
+        {!condensed && <div>
           <p className="text-[13px] text-muted-foreground">Base pay</p>
           <p className="mt-1 text-xl font-semibold tabular-nums">
             {formatMoney(item.base_pay, item.currency, item.pay_frequency)}
           </p>
-        </div>
+        </div>}
         <div>
           <p className="text-[13px] text-muted-foreground">Target variable pay</p>
           <p className="mt-1 text-lg font-medium tabular-nums">
@@ -108,10 +108,10 @@ function PackageDetails({ item }: { item: CompensationPackage }) {
           <p className="text-sm text-muted-foreground">No allowances recorded.</p>
         )}
       </div>
-      <p className="border-t pt-4 text-sm">
+      {!condensed && <p className="border-t pt-4 text-sm">
         <span className="text-muted-foreground">Reason: </span>
         {item.change_reason || "Not recorded"}
-      </p>
+      </p>}
       {(item.change_trigger || item.authorization_reference) && (
         <p className="text-[13px] text-muted-foreground">
           {item.change_trigger && `Category: ${statusLabel(item.change_trigger)}`}
@@ -173,7 +173,7 @@ function PackageList({
                   </div>
                 </summary>
                 <div className="mt-4 border-t pt-5">
-                  <PackageDetails item={item} />
+                  <PackageDetails item={item} condensed />
                 </div>
               </details>
             </CardContent>
@@ -193,15 +193,17 @@ function PackageList({
 export function EmployeeProfile({
   employeeId,
   savedPackageId,
-  onBack,
   onRecordCompensation,
   onFullAuditLog,
+  onBack,
+  onOpenEmployee,
 }: {
   employeeId: number;
   savedPackageId?: number | null;
-  onBack: () => void;
   onRecordCompensation: () => void;
   onFullAuditLog: (employeeId: number) => void;
+  onBack: () => void;
+  onOpenEmployee: (employeeId: number) => void;
 }) {
   const [asOf, setAsOf] = useState(utcToday);
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
@@ -243,10 +245,10 @@ export function EmployeeProfile({
   const employee = detail?.employee;
   const savedPackage = detail && savedPackageId ? [detail.current, ...detail.scheduled, ...detail.history].find((item) => item?.id === savedPackageId) : null;
   return (
-    <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
-      <Button variant="ghost" className="-ml-2 mb-5" onClick={onBack}>
+    <div className="mx-auto w-full max-w-[1440px] px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
+      <Button variant="ghost" className="-ml-3 mb-4" onClick={onBack}>
         <ArrowLeftIcon aria-hidden="true" />
-        Back to directory
+        Back to employees
       </Button>
       {loading ? (
         <div className="space-y-5" aria-label="Loading employee profile">
@@ -277,8 +279,7 @@ export function EmployeeProfile({
         <>
           {savedPackage && <p className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">Package saved for {employee.employee_code}, effective {formatDate(savedPackage.effective_from)}. It is highlighted below.</p>}
           <header className="mb-6 border-b pb-6">
-            <p className="text-[13px] text-muted-foreground">Employees / {employee.employee_code}</p>
-            <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="flex flex-wrap items-center gap-3">
                   <h1 className="text-[28px] leading-9 font-semibold tracking-tight">
@@ -288,6 +289,7 @@ export function EmployeeProfile({
                     {statusLabel(employee.status)}
                   </Badge>
                 </div>
+                <p className="mt-1.5 max-w-[65ch] text-[15px] leading-[22px] text-muted-foreground">Review compensation, employment details, and change history.</p>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {employee.employee_code} · {employee.job_title || "Job title not specified"} ·{" "}
                   {employee.department.name}
@@ -297,19 +299,19 @@ export function EmployeeProfile({
                   {employee.termination_date ? ` · Left ${formatDate(employee.termination_date)}` : ""}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 sm:ml-auto sm:justify-end">
                 <Button variant="outline" onClick={() => setEditOpen(true)}>
                   <PencilSimpleIcon aria-hidden="true" />
                   Edit details
                 </Button>
                 <Button variant="outline" onClick={exportProfile} loading={exporting}>
                   <DownloadSimpleIcon aria-hidden="true" />
-                  Export compensation
+                  Export CSV
                 </Button>
                 <Button onClick={onRecordCompensation}>
                   <PlusIcon aria-hidden="true" />
                   {detail.current || detail.history.length || detail.scheduled.length
-                    ? "Record compensation change"
+                    ? "Record change"
                     : "Add first package"}
                 </Button>
               </div>
@@ -320,10 +322,13 @@ export function EmployeeProfile({
               </p>
             )}
           </header>
-          <div className="mb-6 flex flex-wrap items-end gap-3 rounded-lg border bg-muted px-4 py-3">
-            <div>
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5"><h2 className="text-lg font-semibold">Compensation timeline</h2><ContextInfo label="About compensation dates">Package dates use UTC. Values retain their stored currency and frequency.</ContextInfo></div>
+              <p className="mt-1 text-[13px] text-muted-foreground">Packages are grouped by their status on the selected date.</p>
+            </div>
+            <div className="shrink-0">
               <label className="mb-1 flex items-center gap-1 text-[13px] font-medium" htmlFor="profile-as-of">
-                <CalendarBlankIcon aria-hidden="true" size={16} />
                 Compensation as of (UTC)
               </label>
               <DatePicker
@@ -339,9 +344,6 @@ export function EmployeeProfile({
                 className="w-48"
               />
             </div>
-            <p className="pb-1 text-[13px] text-muted-foreground">
-              The selected date changes Current, Scheduled, and History.
-            </p>
           </div>
           <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_340px]">
             <div className="min-w-0 space-y-7">
@@ -352,7 +354,6 @@ export function EmployeeProfile({
                       <h2 id="current-heading" className="text-lg font-semibold">
                         Current package
                       </h2>
-                      <Badge variant="success">Current</Badge>
                       {detail.current.id === savedPackageId && <Badge variant="success">Just saved</Badge>}
                     </CardHeader>
                     <CardContent>
@@ -375,9 +376,6 @@ export function EmployeeProfile({
                           : "Record a package to establish current compensation."}
                       </EmptyDescription>
                     </EmptyHeader>
-                    {!detail.scheduled.length && !detail.history.length && (
-                      <Button onClick={onRecordCompensation}>Add first package</Button>
-                    )}
                   </Empty>
                 </section>
               )}
@@ -404,28 +402,15 @@ export function EmployeeProfile({
                     <div>
                       <dt className="text-[13px] text-muted-foreground">Reporting line</dt>
                       <dd className="mt-1">
-                        {employee.manager
-                          ? `${employee.manager.first_name} ${employee.manager.last_name} (${employee.manager.employee_code})`
-                          : "Not recorded"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-[13px] text-muted-foreground">Department</dt>
-                      <dd className="mt-1">{employee.department.name}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-[13px] text-muted-foreground">Location</dt>
-                      <dd className="mt-1">
-                        {employee.location.name}, {employee.country.name}
+                        {employee.manager ? <button type="button" onClick={() => onOpenEmployee(employee.manager!.employee_id)} className="rounded-sm text-left font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+                          {employee.manager.first_name} {employee.manager.last_name} ({employee.manager.employee_code})
+                        </button> : "Not recorded"}
                       </dd>
                     </div>
                   </dl>
                 </CardContent>
               </Card>
               <EmployeeAuditCard employeeId={employeeId} refreshKey={auditRefresh + retry} onFullAuditLog={onFullAuditLog} />
-              <p className="text-[13px] leading-5 text-muted-foreground">
-                Package dates use UTC. Values retain their stored currency and frequency.
-              </p>
             </aside>
           </div>
           <EditEmployeeSheet

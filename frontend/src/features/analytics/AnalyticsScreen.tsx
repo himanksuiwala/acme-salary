@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react'
 import {
-  ArrowClockwiseIcon, ArrowRightIcon, ChartBarIcon, DownloadSimpleIcon,
+  ArrowClockwiseIcon, ArrowRightIcon, DownloadSimpleIcon,
   InfoIcon, SlidersHorizontalIcon, UsersThreeIcon, WarningCircleIcon,
 } from '@phosphor-icons/react'
 import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { Badge } from '@/components/ui/badge'
-import { ContextInfo } from '@/components/product/ContextInfo'
-import { DatePicker } from '@/components/product/DatePicker'
 import { DateRangePicker } from '@/components/product/DateRangePicker'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
@@ -18,7 +16,7 @@ import { Sheet, SheetDescription, SheetFooter, SheetHeader, SheetPanel, SheetPop
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip as Hint, TooltipPopup, TooltipTrigger } from '@/components/ui/tooltip'
-import { formatDate, formatMoney, roleLabel } from '@/features/employees/format'
+import { formatDate, formatMoney, roleLabel, statusLabel } from '@/features/employees/format'
 import type { Currency, DirectoryOptions } from '@/features/employees/api'
 import type { AnalyticsQuery, AnalyticsResult, Group } from './api'
 import { downloadAnalytics, getAnalytics, getAnalyticsOptions } from './api'
@@ -150,38 +148,35 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
     { key: 'country', label: 'Country', value: query.country, display: options?.countries.find((item) => item.code === query.country)?.name ?? query.country },
     { key: 'department', label: 'Department', value: query.department, display: options?.departments.find((item) => item.code === query.department)?.name ?? query.department },
     { key: 'role', label: 'Role', value: query.role, display: roleLabel(query.role) },
-    { key: 'status', label: 'Status', value: query.status, display: query.status.replaceAll('_', ' ').toLowerCase() },
+    { key: 'status', label: 'Status', value: query.status, display: statusLabel(query.status) },
     { key: 'location_id', label: 'Location', value: query.location_id, display: options?.locations.find((item) => String(item.id) === query.location_id)?.name ?? query.location_id },
   ] as const
   const appliedFilters = activeFilters.filter((item) => item.value)
 
   return <div className="mx-auto w-full max-w-[1440px] space-y-6 px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
-    <header className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-      <div><p className="text-[13px] text-muted-foreground">Workspace / Analytics</p><div className="mt-1 flex items-center gap-1.5"><h1 className="text-[28px] font-semibold leading-9 tracking-tight">Compensation analytics</h1><ContextInfo label="About compensation analytics">Annualized compensation commitments, distribution and cohort breakdowns as of {labelDate(query.as_of)} UTC. Figures are not actual cash paid.</ContextInfo></div></div>
-      <div className="grid w-full grid-cols-1 gap-2 justify-self-end min-[380px]:grid-cols-2 sm:w-auto xl:flex xl:flex-wrap xl:justify-end">
-        <Button variant="outline" className="w-full min-[380px]:col-span-2 xl:w-auto" onClick={() => setMethodologyOpen(true)} disabled={!data}><InfoIcon aria-hidden="true" />Methodology &amp; FX Notes</Button>
-        <Button variant="outline" className="w-full xl:w-auto" onClick={exportData} loading={exporting} disabled={!data || !total}><DownloadSimpleIcon aria-hidden="true" />Export snapshot</Button>
-        <Button className="w-full xl:w-auto" onClick={() => onViewEmployees()}><UsersThreeIcon aria-hidden="true" />View employees</Button>
+    <header className="flex flex-wrap items-start justify-between gap-4">
+      <div><div className="flex items-center gap-1.5"><h1 className="text-[28px] font-semibold leading-9 tracking-tight">Compensation analytics</h1><Button size="icon-sm" variant="ghost" aria-label="Methodology and FX notes" title="Methodology and FX notes" onClick={() => setMethodologyOpen(true)} disabled={!data}><InfoIcon aria-hidden="true" size={17} /></Button></div><p className="mt-1.5 max-w-[65ch] text-[15px] leading-[22px] text-muted-foreground">Explore annualized pay, compare groups, and inspect compensation changes.</p></div>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={exportData} loading={exporting} disabled={!data || !total}><DownloadSimpleIcon aria-hidden="true" />Export snapshot</Button>
+        <Button onClick={() => onViewEmployees()}><UsersThreeIcon aria-hidden="true" />View employees</Button>
       </div>
     </header>
-    <section aria-label="Analytics filters" className="rounded-xl border bg-card p-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-44 flex-1 sm:max-w-64"><label htmlFor="analytics-as-of" className="mb-1.5 block text-[13px] font-medium text-muted-foreground">As of (UTC)</label><DatePicker id="analytics-as-of" label="As of (UTC)" value={query.as_of} onChange={(value) => { if (value) update({ as_of: value, period_to: value, period_from: value.slice(0, 7) + '-01' }) }} /></div>
-        <div className="min-w-52 flex-[2] sm:max-w-80"><span className="mb-1.5 block text-[13px] font-medium text-muted-foreground">Metric for chart and groups</span><p className="flex min-h-9 items-center rounded-lg bg-muted px-3 text-sm font-medium">Annualized Base Salary</p></div>
-        <Button variant="outline" onClick={() => setFiltersOpen(true)}><SlidersHorizontalIcon aria-hidden="true" />Filters{appliedFilters.length ? ` (${appliedFilters.length})` : ''}</Button>
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3 text-[13px] text-muted-foreground"><span>{data ? `${count(total)} employees · ` : ''}Reporting currency: USD</span>{appliedFilters.map((item) => <Button key={item.key} size="xs" variant="outline" className="max-w-full" aria-label={`Remove ${item.label} filter`} onClick={() => update({ [item.key]: '' })}><span className="max-w-44 truncate">{item.label}: {item.display}</span>×</Button>)}{appliedFilters.length > 0 && <Button size="xs" variant="ghost" onClick={clearCohort}>Clear all</Button>}</div>
+    <section aria-label="Analytics filters" className="flex flex-wrap items-center gap-2">
+      <span className="mr-auto text-[13px] text-muted-foreground">{data ? `${count(total)} employees · ` : ''}Reporting currency: USD</span>
+      {appliedFilters.map((item) => <Button key={item.key} size="xs" variant="outline" className="max-w-full" aria-label={`Remove ${item.label} filter`} onClick={() => update({ [item.key]: '' })}><span className="max-w-44 truncate">{item.label}: {item.display}</span>×</Button>)}
+      {appliedFilters.length > 0 && <Button size="xs" variant="ghost" onClick={clearCohort}>Clear all</Button>}
+      <Button variant="outline" className="ml-auto" onClick={() => setFiltersOpen(true)}><SlidersHorizontalIcon aria-hidden="true" />Filters{appliedFilters.length ? ` (${appliedFilters.length})` : ''}</Button>
     </section>
     <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}><SheetPopup aria-label="Cohort filters"><SheetHeader><SheetTitle>Filter cohort</SheetTitle><SheetDescription>Refine the employees included in every analytics result.</SheetDescription></SheetHeader><SheetPanel className="space-y-4">
       <FilterSelect label="Country" value={query.country} values={options?.countries.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => update({ country: value })} />
       <FilterSelect label="Department" value={query.department} values={options?.departments.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => update({ department: value })} />
       <FilterSelect label="Role" value={query.role} values={options?.roles.map((item) => ({ value: item, label: roleLabel(item) })) ?? []} onChange={(value) => update({ role: value })} />
-      <FilterSelect label="Status" value={query.status} values={options?.statuses.map((item) => ({ value: item, label: item.replaceAll('_', ' ').toLowerCase() })) ?? []} onChange={(value) => update({ status: value })} />
+      <FilterSelect label="Status" value={query.status} values={options?.statuses.map((item) => ({ value: item, label: statusLabel(item) })) ?? []} onChange={(value) => update({ status: value })} />
       <FilterSelect label="Location" value={query.location_id} values={options?.locations.map((item) => ({ value: String(item.id), label: `${item.name}, ${item.country_name}` })) ?? []} onChange={(value) => update({ location_id: value })} />
     </SheetPanel><SheetFooter className="flex justify-between"><Button variant="ghost" onClick={clearCohort} disabled={!appliedFilters.length}>Clear all</Button><Button onClick={() => setFiltersOpen(false)}>Show results</Button></SheetFooter></SheetPopup></Sheet>
     {optionsError && <p className="rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm text-warning-foreground" role="alert">Filter choices unavailable: {optionsError} <Button variant="ghost" size="xs" onClick={() => setRetry((value) => value + 1)}>Retry</Button></p>}
     {exportError && <p role="alert" className="text-sm text-destructive-foreground">{exportError}</p>}
-    {loading ? <div className="space-y-5" aria-label="Loading analytics"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-36" />)}</div><Skeleton className="h-80" /><Skeleton className="h-64" /></div> : error ? <div role="alert" className="rounded-xl border bg-card p-8"><h2 className="text-lg font-semibold">Couldn’t load analytics</h2><p className="mt-2 text-sm text-muted-foreground">{error}</p><Button className="mt-4" variant="outline" onClick={() => setRetry((value) => value + 1)}><ArrowClockwiseIcon aria-hidden="true" />Try again</Button></div> : !data ? null : total === 0 ? <Empty className="rounded-xl border bg-card"><EmptyHeader><EmptyTitle>No employees in this cohort</EmptyTitle><EmptyDescription>Change the date or filters to include employees employed on that date.</EmptyDescription></EmptyHeader><Button variant="outline" onClick={clear}>Clear filters</Button></Empty> : <>
+    {loading ? <div className="space-y-5" aria-label="Loading analytics"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-36" />)}</div><Skeleton className="h-80" /><Skeleton className="h-64" /></div> : error ? <div role="alert" className="rounded-xl border bg-card p-8"><h2 className="text-lg font-semibold">Couldn’t load analytics</h2><p className="mt-2 text-sm text-muted-foreground">{error}</p><Button className="mt-4" variant="outline" onClick={() => setRetry((value) => value + 1)}><ArrowClockwiseIcon aria-hidden="true" />Try again</Button></div> : !data ? null : total === 0 ? <Empty className="rounded-xl border bg-card"><EmptyHeader><EmptyTitle>No employees in this cohort</EmptyTitle><EmptyDescription>Change the filters to include more employees.</EmptyDescription></EmptyHeader><Button variant="outline" onClick={clear}>Clear filters</Button></Empty> : <>
       {selected?.partial && <div role="status" aria-live="polite" className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm text-warning-foreground">
         <WarningCircleIcon aria-hidden="true" className="mt-0.5 shrink-0" /><p>Partial annualized base salary: {count(selected.excluded)} of {count(total)} employees excluded. Hover or focus a Partial badge for reasons.</p>
       </div>}
@@ -192,7 +187,7 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
         <MetricCard title="Target variable pool" value={money(data.metrics.variable.sum, currency)} detail={`${count(data.metrics.variable.included)} included · target, not paid bonus`} partial={data.metrics.variable.partial} reasons={data.metrics.variable.exclusion_reasons} />
       </section>
       <section aria-labelledby="distribution-title" className="rounded-xl border bg-card p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4"><div><h2 id="distribution-title" className="text-lg font-semibold">{chartMetricName} distribution</h2><p className="mt-1 text-[13px] text-muted-foreground">USD · {labelDate(query.as_of)} UTC · {count(selected?.included ?? 0)} employees included</p></div><div className="flex flex-wrap items-center gap-2"><Badge variant="outline"><ChartBarIcon aria-hidden="true" />Chart and exact values</Badge><Button variant="outline" size="sm" onClick={() => onViewEmployees()}>View employees <ArrowRightIcon aria-hidden="true" /></Button></div></div>
+        <div className="border-b pb-4"><h2 id="distribution-title" className="text-lg font-semibold">{chartMetricName} distribution</h2><p className="mt-1 text-[13px] text-muted-foreground">USD · {labelDate(query.as_of)} UTC · {count(selected?.included ?? 0)} employees included</p></div>
         {!series.length ? <div className="py-12 text-center text-sm text-muted-foreground">No comparable salary values for this cohort. Review exclusions with the Partial badge.</div> : <>
           <div role="img" aria-label={`Distribution of annualized base salary for ${selected?.included} employees; exact bin values follow in the table`} className="mt-5 h-64 w-full">
             <ResponsiveContainer width="100%" height="100%"><BarChart data={series} accessibilityLayer margin={{ top: 12, right: 10, bottom: 8, left: 0 }}><CartesianGrid vertical={false} stroke="var(--border)" /><XAxis dataKey="short" tickLine={false} axisLine={false} fontSize={11} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={11} /><Tooltip formatter={(value) => [count(Number(value)), 'Employees']} labelFormatter={(_label, payload) => payload?.[0]?.payload?.label ?? ''} /><Bar dataKey="count" fill="var(--color-neutral-500)" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer>

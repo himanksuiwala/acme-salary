@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  ArrowRightIcon, ColumnsIcon, DownloadSimpleIcon, MagnifyingGlassIcon,
+  ColumnsIcon, DownloadSimpleIcon, MagnifyingGlassIcon,
   PlusIcon, RowsIcon, SlidersHorizontalIcon, UsersThreeIcon, WarningCircleIcon, XIcon,
 } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
@@ -55,16 +55,16 @@ function FilterSelect({ label, value, values, onChange, selectClassName, showLab
   )
 }
 
-function EmployeeName({ employee, onOpen }: { employee: Employee; onOpen: () => void }) {
+function EmployeeName({ employee, onOpen }: { employee: Employee; onOpen?: () => void }) {
   return (
     <div className="flex min-w-0 items-center gap-3">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-700" aria-hidden="true">
         {employee.first_name[0]}{employee.last_name[0]}
       </span>
       <div className="min-w-0">
-        <button className="block max-w-full truncate text-left font-medium text-foreground underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring" onClick={onOpen} type="button">
+        {onOpen ? <button className="block max-w-full truncate text-left font-medium text-foreground underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring" onClick={(event) => { event.stopPropagation(); onOpen() }} type="button">
           {employee.first_name} {employee.last_name}
-        </button>
+        </button> : <span className="block max-w-full truncate font-medium text-foreground">{employee.first_name} {employee.last_name}</span>}
         <p className="truncate text-xs text-muted-foreground" title={employee.email}>{employee.email}</p>
       </div>
     </div>
@@ -82,10 +82,9 @@ function DirectoryRows({ employees, columns, compact, asOf, onOpen }: {
     <>
       <div className="space-y-2 md:hidden">
         {employees.map((employee) => (
-          <div className="rounded-xl border bg-card p-4" key={employee.employee_id}>
+          <div role="button" tabIndex={0} className="block w-full cursor-pointer rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" key={employee.employee_id} onClick={() => onOpen(employee.employee_id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(employee.employee_id) } }} aria-label={`Open ${employee.first_name} ${employee.last_name}'s profile`}>
             <div className="flex items-start justify-between gap-3">
-              <EmployeeName employee={employee} onOpen={() => onOpen(employee.employee_id)} />
-              <Button aria-label={`Open ${employee.first_name} ${employee.last_name}`} title={`Open ${employee.first_name} ${employee.last_name}`} size="icon-sm" variant="ghost" onClick={() => onOpen(employee.employee_id)}><ArrowRightIcon aria-hidden="true" /></Button>
+              <EmployeeName employee={employee} />
             </div>
             <p className="mt-3 text-xs font-medium text-muted-foreground">{employee.employee_code} · {employee.country.name}</p>
             <p className="mt-1 text-sm">{employee.job_title || 'Role not specified'} · {employee.department.name}</p>
@@ -105,20 +104,18 @@ function DirectoryRows({ employees, columns, compact, asOf, onOpen }: {
               {columns.status && <TableHead>Status</TableHead>}
               {columns.pay && <TableHead className="text-right">{asOf ? 'Base pay as of date' : 'Current base pay'}</TableHead>}
               {columns.package && <TableHead>Package state</TableHead>}
-              <TableHead className="pr-5 text-right">Open</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {employees.map((employee) => (
-              <TableRow className={compact ? 'h-10' : 'h-14'} key={employee.employee_id}>
+              <TableRow className={`${compact ? 'h-10' : 'h-14'} cursor-pointer focus-within:bg-muted/40`} key={employee.employee_id} onClick={() => onOpen(employee.employee_id)} title={`Open ${employee.first_name} ${employee.last_name}'s profile`}>
                 <TableCell className="pl-5 text-xs font-medium text-muted-foreground tabular-nums">{employee.employee_code}</TableCell>
                 <TableCell className="sticky left-0 z-10 bg-card"><EmployeeName employee={employee} onOpen={() => onOpen(employee.employee_id)} /></TableCell>
                 {columns.role && <TableCell><span className="block max-w-48 truncate" title={employee.job_title || undefined}>{employee.job_title || 'Not specified'}</span><span className="mt-1 block max-w-48 truncate text-xs text-muted-foreground" title={employee.department.name}>{employee.department.name}</span></TableCell>}
                 {columns.location && <TableCell><span className="block max-w-40 truncate" title={`${employee.location.name}, ${employee.country.name}`}>{employee.location.name}, {employee.country.name}</span></TableCell>}
                 {columns.status && <TableCell><Badge variant={employee.status === 'ACTIVE' ? 'success' : 'secondary'}>{statusLabel(employee.status)}</Badge></TableCell>}
-                {columns.pay && <TableCell className="text-right tabular-nums">{employee.current_compensation ? <><span className="block font-medium">{formatMoney(employee.current_compensation.base_pay, employee.current_compensation.currency)}</span><span className="mt-1 block text-xs text-muted-foreground">{employee.current_compensation.currency.code} / {employee.current_compensation.pay_frequency.toLowerCase()}</span></> : <span className="text-muted-foreground">Not specified</span>}</TableCell>}
+                {columns.pay && <TableCell className="text-right tabular-nums">{employee.current_compensation ? <span className="font-medium">{formatMoney(employee.current_compensation.base_pay, employee.current_compensation.currency, employee.current_compensation.pay_frequency)}</span> : <span className="text-muted-foreground">Not specified</span>}</TableCell>}
                 {columns.package && <TableCell><PackageBadge state={employee.package_state} />{employee.next_effective_from && <span className="mt-1 block text-xs text-muted-foreground">From {formatDate(employee.next_effective_from)}</span>}</TableCell>}
-                <TableCell className="pr-5 text-right"><Button aria-label={`Open ${employee.first_name} ${employee.last_name}`} title={`Open ${employee.first_name} ${employee.last_name}`} size="icon-sm" variant="ghost" onClick={() => onOpen(employee.employee_id)}><ArrowRightIcon aria-hidden="true" /></Button></TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -226,15 +223,16 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
 
   return (
     <div className="mx-auto w-full max-w-[1440px] px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
-      <div className="mb-6 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><h1 className="text-[28px] leading-9 font-semibold tracking-tight">Employees</h1><ContextInfo label="About the employee directory">Find employees, inspect effective compensation, and maintain the directory. Figures use each employee’s stored currency{query.as_of ? ` as of ${formatDate(query.as_of)} UTC` : ''}.</ContextInfo></div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><h1 className="text-[28px] leading-9 font-semibold tracking-tight">Employees</h1><ContextInfo label="About directory figures">Compensation uses each employee’s stored currency{query.as_of ? ` as of ${formatDate(query.as_of)} UTC` : ''}. Search and filters are applied by the server.</ContextInfo></div>
+          <p className="mt-1.5 max-w-[65ch] text-[15px] leading-[22px] text-muted-foreground">Find employees and review their compensation and employment details.</p>
         </div>
-        <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2 sm:justify-self-end">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" loading={exporting} disabled={!data || data.total === 0} onClick={handleExport}><DownloadSimpleIcon aria-hidden="true" />Export directory</Button>
           <Button onClick={() => setAddOpen(true)}><PlusIcon aria-hidden="true" />Add employee</Button>
         </div>
-      </div>
+      </header>
 
       <div className="mb-5 rounded-xl border bg-card p-3 sm:p-4">
         <div className="flex flex-wrap items-center gap-2">

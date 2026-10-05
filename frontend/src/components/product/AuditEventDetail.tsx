@@ -4,6 +4,7 @@ import { formatDate, formatMoney, roleLabel, statusLabel } from '@/features/empl
 import type { AuditEvent, AuditValue } from '@/features/audit/api'
 
 import { actionLabel, auditTimestamp, fieldLabel } from '@/features/audit/format'
+import { ActorIdentity } from './ActorIdentity'
 
 function valueLabel(value: AuditValue, field: string, event: AuditEvent, side: 'before' | 'after'): string {
   if (value === null && field.endsWith('effective_to')) return 'Ongoing'
@@ -34,7 +35,7 @@ export function AuditEventDetail({ event }: { event: AuditEvent }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold">{actionLabel(event.action)} details</h3>
-          <p className="mt-1 text-[13px] leading-5 text-muted-foreground">Recorded by {event.actor.name} · {auditTimestamp(event.timestamp)} UTC</p>
+          <p className="mt-1 text-[13px] leading-5 text-muted-foreground">Recorded by <ActorIdentity actor={event.actor} className="text-muted-foreground" /> · {auditTimestamp(event.timestamp)} UTC</p>
         </div>
         <Badge variant={event.outcome === 'FAILED' ? 'error' : 'success'}>{event.outcome === 'FAILED' ? 'Failed' : 'Successful'}</Badge>
       </div>

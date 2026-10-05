@@ -5,16 +5,19 @@ import {
   WarningCircleIcon, XIcon,
 } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
+import { ContextInfo } from '@/components/product/ContextInfo'
 import { DateRangePicker } from '@/components/product/DateRangePicker'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination'
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Sheet, SheetDescription, SheetFooter, SheetHeader, SheetPanel, SheetPopup, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { statusLabel } from '@/features/employees/format'
 import { AuditEventDetail } from './AuditEventDetail'
+import { ActorIdentity } from './ActorIdentity'
 import { actionLabel, auditTimestamp, fieldLabel } from '@/features/audit/format'
 import { auditFilterKeys, defaultAuditQuery, downloadAudit, getAudit, getAuditOptions } from '@/features/audit/api'
 import type { AuditEvent, AuditOptions, AuditQuery, AuditResponse } from '@/features/audit/api'
@@ -74,6 +77,7 @@ export function AuditTrail({ employeeId, query: controlledQuery, onQueryChange, 
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exported, setExported] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const instanceId = useId()
   const requestKey = JSON.stringify([query, employeeId, refresh, refreshKey])
   const dateError = query.from_date && query.to_date && query.from_date > query.to_date ? 'From date must be on or before to date.' : null
@@ -84,6 +88,7 @@ export function AuditTrail({ employeeId, query: controlledQuery, onQueryChange, 
   const employeeScopeLabel = scopedEmployee ? `${scopedEmployee.name} (${scopedEmployee.code})` : `Employee #${query.employee_id}`
   const options = current?.options ?? load.options
   const hasFilters = auditFilterKeys.some((key) => Boolean(query[key]))
+  const filterCount = auditFilterKeys.filter((key) => key !== 'search' && Boolean(query[key])).length
   function updateQuery(patch: Partial<AuditQuery>) {
     setExpanded(null)
     if (onQueryChange) onQueryChange(patch)
@@ -135,13 +140,11 @@ export function AuditTrail({ employeeId, query: controlledQuery, onQueryChange, 
     { label: 'Failed operations', value: data?.summary.failed_operations, note: 'Distinct unsuccessful operations', icon: WarningCircleIcon },
   ]
   return (
-    <section aria-label={employeeId ? 'Employee audit trail' : 'Audit log'} className={employeeId ? 'mt-8 space-y-5' : 'mx-auto w-full max-w-[1440px] space-y-6 px-4 py-6 sm:px-6 lg:px-8'}>
+    <section aria-label={employeeId ? 'Employee audit trail' : 'Audit log'} className={employeeId ? 'mt-8 space-y-5' : 'mx-auto w-full max-w-[1440px] space-y-6 px-4 py-7 sm:px-6 lg:px-8 lg:py-9'}>
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          {!employeeId && <p className="mb-2 text-[13px] text-muted-foreground">Administration / Audit log</p>}
-          {employeeId ? <h2 className="text-lg font-semibold leading-[26px]">Audit trail</h2> : <h1 className="text-[28px] font-semibold leading-9 tracking-tight">Audit log & governance</h1>}
+          {employeeId ? <h2 className="text-lg font-semibold leading-[26px]">Audit trail</h2> : <div className="flex items-center gap-1.5"><h1 className="text-[28px] font-semibold leading-9 tracking-tight">Audit log</h1><ContextInfo label="About audit timestamps">Timestamps and date filters use UTC. Export completion means the server delivered the response.</ContextInfo></div>}
           <p className="mt-1.5 max-w-[65ch] text-[15px] leading-[22px] text-muted-foreground">{employeeId ? 'Changes and data exports associated with this employee.' : 'Review employee changes, compensation updates, and data exports.'}</p>
-          {query.employee_id && <p className="mt-2 text-sm font-medium">Viewing activity for {employeeScopeLabel}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => { setExpanded(null); setRefresh((value) => value + 1) }} disabled={loading}><ArrowsClockwiseIcon aria-hidden="true" />Refresh</Button>
@@ -157,32 +160,29 @@ export function AuditTrail({ employeeId, query: controlledQuery, onQueryChange, 
           <p className="text-[13px] leading-[18px] text-muted-foreground">{note}</p>
         </div>)}
       </div>}
-      <div className="overflow-hidden rounded-xl border bg-card">
-        <div className="space-y-4 border-b p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 text-sm font-semibold"><FunnelIcon aria-hidden="true" size={16} />{employeeId ? 'Filter employee activity' : 'Filter activity'}</h2>
-            <span className="text-[13px] text-muted-foreground">All timestamps and date filters use UTC</span>
+      <div className="rounded-xl border bg-card p-3 sm:p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 basis-56 sm:max-w-md">
+            <MagnifyingGlassIcon aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-muted-foreground" size={17} />
+            <Input id={`${instanceId}-search`} aria-label="Search audit events" type="search" className="[&_input]:pl-9" maxLength={200} placeholder="Search events, employees, or actors…" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') updateQuery({ search }) }} />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="sm:col-span-2">
-              <label htmlFor={`${instanceId}-search`} className="mb-1.5 block text-[13px] font-medium">Search audit events</label>
-              <div className="relative"><MagnifyingGlassIcon aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-muted-foreground" size={17} />
-                <Input id={`${instanceId}-search`} className="min-h-11 pl-9 sm:min-h-9" maxLength={200} placeholder="Employee name or ID, actor, event or operation reference…" value={search} onChange={(event) => setSearch(event.target.value)} />
-              </div>
-            </div>
+          <Button variant="outline" onClick={() => setFiltersOpen(true)}><FunnelIcon aria-hidden="true" />Filters{filterCount ? ` (${filterCount})` : ''}</Button>
+        </div>
+        {hasFilters && <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t pt-3" aria-label="Active audit filters">
+          {auditFilterKeys.filter((key) => query[key]).map((key) => <Button key={key} variant="outline" size="xs" className="max-w-full" onClick={() => { if (key === 'search') setSearch(''); updateQuery({ [key]: '' }) }} aria-label={`Remove ${statusLabel(key)} filter`}>
+            <span className="max-w-44 truncate">{key === 'employee_id' ? employeeScopeLabel : key === 'action' ? actionLabel(query[key]) : key === 'actor_id' ? options?.actors.find((actor) => String(actor.id) === query[key])?.name ?? query[key] : `${statusLabel(key)}: ${key === 'outcome' || key === 'entity_type' ? statusLabel(query[key]) : query[key]}`}</span><XIcon aria-hidden="true" size={12} />
+          </Button>)}<Button variant="ghost" size="xs" onClick={clearFilters}>Clear all</Button>
+        </div>}
+      </div>
+      {dateError && <p role="alert" id={`${instanceId}-dates-error`} className="text-sm text-destructive-foreground">{dateError} <Button variant="ghost" size="xs" onClick={() => setFiltersOpen(true)}>Edit date filters</Button></p>}
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}><SheetPopup aria-label="Audit filters"><SheetHeader><SheetTitle>Filter activity</SheetTitle><SheetDescription>Refine the audit events shown. Date filters use UTC.</SheetDescription></SheetHeader><SheetPanel className="space-y-4">
             <FilterSelect label="Event types" value={query.action} options={(options?.actions ?? []).map((value) => ({ value, label: actionLabel(value) }))} onChange={(action) => updateQuery({ action })} />
             <FilterSelect label="Actors" value={query.actor_id} options={(options?.actors ?? []).map((actor) => ({ value: String(actor.id), label: actor.name }))} onChange={(actor_id) => updateQuery({ actor_id })} />
             <FilterSelect label="Target types" value={query.entity_type} options={(options?.entity_types ?? []).map((value) => ({ value, label: statusLabel(value) }))} onChange={(entity_type) => updateQuery({ entity_type })} />
             <FilterSelect label="Outcomes" value={query.outcome} options={[{ value: 'SUCCESS', label: 'Successful' }, { value: 'FAILED', label: 'Failed' }]} onChange={(outcome) => updateQuery({ outcome })} />
             <div className="min-w-0"><span className="mb-1.5 block text-[13px] font-medium">Date range</span><DateRangePicker label="Audit date range (UTC)" value={{ from: query.from_date, to: query.to_date }} onChange={({ from, to }) => updateQuery({ from_date: from, to_date: to })} invalid={Boolean(dateError)} /></div>
-          </div>
-          {dateError && <p role="alert" id={`${instanceId}-dates-error`} className="text-sm text-destructive-foreground">{dateError}</p>}
-          {hasFilters && <div className="flex flex-wrap items-center gap-2" aria-label="Active audit filters">
-            {auditFilterKeys.filter((key) => query[key]).map((key) => <Button key={key} variant="outline" size="sm" className="max-w-full min-h-10 sm:min-h-7" onClick={() => { if (key === 'search') setSearch(''); updateQuery({ [key]: '' }) }} aria-label={`Remove ${statusLabel(key)} filter`}>
-              <span className="max-w-56 truncate">{key === 'employee_id' ? employeeScopeLabel : key === 'action' ? actionLabel(query[key]) : key === 'actor_id' ? options?.actors.find((actor) => String(actor.id) === query[key])?.name ?? query[key] : `${statusLabel(key)}: ${key === 'outcome' || key === 'entity_type' ? statusLabel(query[key]) : query[key]}`}</span><XIcon aria-hidden="true" size={12} />
-            </Button>)}<Button variant="ghost" size="sm" className="min-h-10 sm:min-h-7" onClick={clearFilters}>Clear filters</Button>
-          </div>}
-        </div>
+        </SheetPanel><SheetFooter className="flex justify-between"><Button variant="ghost" onClick={clearFilters} disabled={!hasFilters}>Clear all</Button><Button onClick={() => setFiltersOpen(false)}>Show results</Button></SheetFooter></SheetPopup></Sheet>
+      <div className="overflow-hidden rounded-xl border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-5">
           <h2 className="text-sm font-semibold">Chronological activity</h2>
           <p role="status" aria-live="polite" className="text-[13px] text-muted-foreground tabular-nums">{loading ? 'Loading events…' : data ? `${data.total.toLocaleString()} matching events · Newest first` : 'Events unavailable'}</p>
@@ -207,7 +207,7 @@ export function AuditTrail({ employeeId, query: controlledQuery, onQueryChange, 
                     <TableCell className="pl-5 text-[13px] leading-5 tabular-nums"><time>{auditTimestamp(event.timestamp)}</time><p className="text-muted-foreground">#{event.id}</p></TableCell>
                     <TableCell><EventBadge event={event} />{event.outcome === 'FAILED' && <p className="mt-1 text-[13px] text-destructive-foreground">Failed</p>}</TableCell>
                     <TableCell className="sticky left-0 z-10 max-w-52 whitespace-normal bg-card leading-5"><Target event={event} onOpenEmployee={onOpenEmployee} /></TableCell>
-                    <TableCell className="max-w-48 whitespace-normal break-words leading-5">{event.actor.name}</TableCell>
+                    <TableCell className="max-w-48 whitespace-normal break-words leading-5"><ActorIdentity actor={event.actor} /></TableCell>
                     <TableCell className="max-w-60 whitespace-normal leading-5 text-muted-foreground">{eventSummary(event)}</TableCell>
                     <TableCell className="pr-5 text-right"><Button variant="ghost" size="sm" aria-expanded={expanded === event.id} aria-controls={expanded === event.id ? `${instanceId}-desktop-${event.id}` : undefined} onClick={() => toggle(event.id)} aria-label={`${expanded === event.id ? 'Hide' : 'View'} details for event ${event.id}`}>{expanded === event.id ? 'Hide' : 'View'}<CaretDownIcon aria-hidden="true" className={expanded === event.id ? 'rotate-180' : ''} size={14} /></Button></TableCell>
                   </TableRow>
@@ -219,7 +219,7 @@ export function AuditTrail({ employeeId, query: controlledQuery, onQueryChange, 
               <div className="space-y-3 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2"><EventBadge event={event} /><Badge variant={event.outcome === 'FAILED' ? 'error' : 'success'}>{event.outcome === 'FAILED' ? 'Failed' : 'Successful'}</Badge></div>
                 <div className="text-sm leading-5"><Target event={event} onOpenEmployee={onOpenEmployee} /></div>
-                <p className="break-words text-[13px] leading-5 text-muted-foreground">{event.actor.name} · {auditTimestamp(event.timestamp)} UTC</p>
+                <p className="break-words text-[13px] leading-5 text-muted-foreground"><ActorIdentity actor={event.actor} className="text-muted-foreground" /> · {auditTimestamp(event.timestamp)} UTC</p>
                 <p className="text-sm leading-5">{eventSummary(event)}</p>
                 <Button variant="outline" className="min-h-11 w-full" aria-expanded={expanded === event.id} aria-controls={expanded === event.id ? `${instanceId}-mobile-${event.id}` : undefined} onClick={() => toggle(event.id)}>{expanded === event.id ? 'Hide' : 'View'} details · #{event.id}<CaretDownIcon aria-hidden="true" className={expanded === event.id ? 'rotate-180' : ''} /></Button>
               </div>

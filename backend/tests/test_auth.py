@@ -93,7 +93,8 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(status, 201)
         event = request("GET", "/api/audit/events")[1]["items"][0]
         self.assertEqual((event["actor"]["id"], event["actor"]["name"]),
-                         (2, "shrishti.singh@acme.com"))
+                         (2, "Shrishti Singh"))
+        self.assertEqual(event["actor"]["email"], "shrishti.singh@acme.com")
 
     def test_unknown_role_cannot_use_workspace(self):
         # A legacy account can carry an old role despite the new schema's role check.

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeftIcon, CalendarBlankIcon, InfoIcon, PlusIcon, TrashIcon } from '@phosphor-icons/react'
-import { Badge } from '@/components/ui/badge'
+import { CalendarBlankIcon, InfoIcon, PlusIcon, TrashIcon } from '@phosphor-icons/react'
 import { DatePicker } from '@/components/product/DatePicker'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -69,7 +68,7 @@ function AmountDelta({ previous, next, currency, frequency }: { previous: number
   </span>
 }
 
-export function CompensationForm({ employeeId, onCancel, onSaved }: { employeeId: number; onCancel: () => void; onSaved: (packageId: number) => void }) {
+export function CompensationForm({ employeeId, onCancel, onSaved, onDirtyChange }: { employeeId: number; onCancel: () => void; onSaved: (packageId: number) => void; onDirtyChange: (dirty: boolean) => void }) {
   const [detail, setDetail] = useState<EmployeeDetail | null>(null)
   const [options, setOptions] = useState<DirectoryOptions | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -84,6 +83,8 @@ export function CompensationForm({ employeeId, onCancel, onSaved }: { employeeId
   const summaryRef = useRef<HTMLDivElement>(null)
   const savingRef = useRef(false)
   const nextKey = useRef(1)
+
+  useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
 
   useEffect(() => {
     if (!dirty) return
@@ -223,11 +224,9 @@ export function CompensationForm({ employeeId, onCancel, onSaved }: { employeeId
     for (const old of priorAllowances.values()) allowanceChanges.push(`Removed ${old.type_name}`)
   }
 
-  return <div className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
-    <Button variant="ghost" className="-ml-2 mb-5" onClick={cancel}><ArrowLeftIcon aria-hidden="true" />Back to profile</Button>
+  return <div className="mx-auto w-full max-w-[1280px] px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
     {loading ? <div className="space-y-5" aria-label="Loading compensation form"><Skeleton className="h-24 w-full" /><div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]"><Skeleton className="h-96" /><Skeleton className="h-80" /></div></div> : !detail || !options || !draft ? <Card className="border ring-0"><CardContent><h1 className="text-xl font-semibold">Couldn’t load compensation form</h1><p className="mt-2 text-sm text-destructive-foreground">{loadError}</p><Button className="mt-4" onClick={() => { setLoading(true); setRetry((value) => value + 1) }}>Try again</Button></CardContent></Card> : <>
-      <header className="mb-6"><p className="text-[13px] text-muted-foreground">Employees / {name} ({detail.employee.employee_code}) / New compensation package</p><h1 className="mt-2 text-[28px] leading-9 font-semibold">{latest ? 'Record compensation change' : 'Add first package'}</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground">Create a complete effective-dated package. The previous version remains in history, and its end date is adjusted when necessary.</p></header>
-      <div className="mb-6 grid gap-3 md:grid-cols-3"><Card className="border ring-0"><CardContent><p className="text-[13px] text-muted-foreground">Employee</p><p className="mt-1 font-semibold">{name}</p><p className="mt-1 text-[13px] text-muted-foreground">{detail.employee.employee_code} · {detail.employee.job_title || 'Role not recorded'}</p><p className="text-[13px] text-muted-foreground">{detail.employee.location.name}, {detail.employee.country.name}</p></CardContent></Card><Card className="border ring-0"><CardContent><div className="flex justify-between gap-2"><p className="text-[13px] text-muted-foreground">Current package</p>{detail.current && <Badge variant="success">Current</Badge>}</div>{detail.current ? <><p className="mt-2 font-semibold tabular-nums">{formatMoney(detail.current.base_pay, detail.current.currency, detail.current.pay_frequency)}</p><p className="mt-1 text-[13px] text-muted-foreground">Effective {formatDate(detail.current.effective_from)}</p></> : <p className="mt-2 text-sm text-muted-foreground">No package effective today.</p>}</CardContent></Card><Card className="border ring-0"><CardContent><p className="text-[13px] text-muted-foreground">Scheduled horizon</p><p className="mt-1 font-semibold">{detail.scheduled.length} future {detail.scheduled.length === 1 ? 'package' : 'packages'}</p><p className="mt-1 text-[13px] text-muted-foreground">{detail.scheduled.length ? `Latest starts ${formatDate(latest!.effective_from)}` : 'No scheduled change'}</p><p className="mt-1 text-[13px] text-muted-foreground">Ledger currency: {currency?.code || 'Select currency'}</p></CardContent></Card></div>
+      <header className="mb-6"><h1 className="text-[28px] leading-9 font-semibold tracking-tight">{latest ? 'Record compensation change' : 'Add first package'}</h1><p className="mt-1.5 max-w-[65ch] text-[15px] leading-[22px] text-muted-foreground">Create a complete package for {name}. Review the effective date and amounts before saving.</p></header>
       {Object.keys(errors).some((key) => key !== 'currency_change') && <div ref={summaryRef} tabIndex={-1} role="alert" className="mb-5 rounded-lg border border-destructive/30 bg-destructive/8 p-4 text-sm text-destructive-foreground"><p className="font-semibold">Review these details before continuing</p><ul className="mt-2 list-disc space-y-1 pl-5">{Object.entries(errors).filter(([key]) => key !== 'currency_change').map(([key, message]) => <li key={key}>{message}</li>)}</ul>{conflict && latest && <p className="mt-3 text-foreground">Latest saved package: {formatMoney(latest.base_pay, latest.currency, latest.pay_frequency)} · Starts {formatDate(latest.effective_from)}.</p>}</div>}
       {errors.currency_change && <p className="mb-5 rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm text-warning-foreground" role="status">{errors.currency_change}</p>}
       {!options.currencies.length && <p role="alert" className="mb-5 rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm text-warning-foreground">No currencies are configured. Add a currency reference before recording compensation.</p>}

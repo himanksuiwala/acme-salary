@@ -34,7 +34,8 @@ class AuditTests(unittest.TestCase):
         self.assertIn('allowances.TRANSPORT.amount', fields)
         self.assertIn('previous_period.effective_to', fields)
         self.assertNotIn('employee_id', fields)
-        self.assertEqual(event['actor']['name'], 'Admin@acme.org')
+        self.assertEqual(event['actor']['name'], 'System Admin')
+        self.assertEqual(event['actor']['email'], 'Admin@acme.org')
         self.assertEqual(event['reason'], 'Annual review')
         self.assertEqual(request('GET', '/api/employees/2/audit')[1]['total'], 0)
         self.assertEqual(request('GET', '/api/employees/999/audit')[0], 404)
@@ -90,7 +91,8 @@ class AuditTests(unittest.TestCase):
                          actor_name='SYSTEM', before={'name':'old','password_hash':'private'},
                          after={'name':'new','password_hash':'changed'})
         event = request('GET', '/api/audit/events')[1]['items'][0]
-        self.assertEqual(event['actor']['name'], 'SYSTEM')
+        self.assertEqual(event['actor']['name'], 'System Admin')
+        self.assertEqual(event['actor']['email'], 'system@acme.com')
         self.assertEqual([c['field'] for c in event['changes']], ['name'])
         for sql in ('UPDATE audit_log SET reason = "changed"', 'DELETE FROM audit_log'):
             with self.assertRaises(sqlite3.IntegrityError):
@@ -153,7 +155,7 @@ class AuditTests(unittest.TestCase):
         payload.update(department_code=detail['department']['code'],location_id=detail['location']['id'],job_title='Senior Analyst')
         request('PATCH','/api/employees/1',body=payload,headers=[(b'x-actor-id',b'2'),(b'x-actor',b'SYSTEM')])
         event = request('GET','/api/audit/events')[1]['items'][0]
-        self.assertEqual(event['actor']['name'],'Admin@acme.org')
+        self.assertEqual(event['actor']['name'],'System Admin')
         self.assertEqual(event['changes'],[{'field':'job_title','before':'Analyst','after':'Senior Analyst'}])
         for query in ('actor_id=2','entity_type=currency','from_date=2000-01-01&to_date=2000-01-01','search=%25'):
             self.assertEqual(request('GET','/api/audit/events',query=query)[1]['total'],0)

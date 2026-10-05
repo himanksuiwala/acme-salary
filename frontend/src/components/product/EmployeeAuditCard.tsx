@@ -8,6 +8,7 @@ import { defaultAuditQuery, getAudit } from '@/features/audit/api'
 import type { AuditEvent } from '@/features/audit/api'
 import { actionLabel, auditTimestamp, fieldLabel } from '@/features/audit/format'
 import { formatDate, formatMoney } from '@/features/employees/format'
+import { ActorIdentity } from './ActorIdentity'
 
 function isScheduled(event: AuditEvent) {
   return event.action === 'CREATE_COMPENSATION' && event.outcome === 'SUCCESS'
@@ -96,7 +97,7 @@ export function EmployeeAuditCard({ employeeId, refreshKey = 0, onFullAuditLog }
                 <Icon aria-hidden="true" size={18} />
               </span>
               <div className="min-w-0 pt-0.5">
-                <p className="break-words text-sm font-medium leading-5">{event.actor.name} {eventAction(event)}</p>
+                <p className="break-words text-sm font-medium leading-5"><ActorIdentity actor={event.actor} /> {eventAction(event)}</p>
                 <p className="mt-1 break-words text-[13px] leading-[18px] text-muted-foreground">{eventContext(event)}</p>
                 <p className="mt-2 text-[13px] leading-[18px] text-muted-foreground tabular-nums"><time>{auditTimestamp(event.timestamp)} UTC</time></p>
               </div>

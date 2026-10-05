@@ -15,7 +15,7 @@ export type AuditEvent = {
   id: number; operation_id: string; timestamp: string; action: string
   entity_type: string; entity_id: number | null
   employee: { id: number; code: string; name: string } | null
-  actor: { id: number | null; name: string; role: string | null }
+  actor: { id: number | null; name: string; email: string | null; role: string | null }
   outcome: 'SUCCESS' | 'FAILED'; reason: string | null; legacy: boolean
   metadata: {
     dataset?: string; row_count?: number; affected_employees?: number; package_count?: number
@@ -32,7 +32,7 @@ export type AuditResponse = {
   summary: { events: number; compensation_changes: number; completed_exports: number; failed_operations: number }
 }
 export type AuditOptions = {
-  actors: { id: number; name: string; role: string }[]; actions: string[]; entity_types: string[]
+  actors: { id: number; name: string; email: string; role: string }[]; actions: string[]; entity_types: string[]
 }
 export function auditParams(query: AuditQuery, includePage = true) {
   const params = new URLSearchParams()

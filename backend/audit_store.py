@@ -12,7 +12,10 @@ from backend.database import connect_database
 FROM = '''FROM audit_log a
     LEFT JOIN app_user u ON u.user_id=a.user_id
     LEFT JOIN employee e ON e.employee_id=a.employee_id'''
-COLUMNS = '''a.*, u.username, u.role, e.employee_code, e.first_name, e.last_name'''
+COLUMNS = '''a.*,
+    u.username AS actor_username, u.email AS actor_email,
+    u.first_name AS actor_first_name, u.last_name AS actor_last_name, u.role AS actor_role,
+    e.employee_code, e.first_name AS employee_first_name, e.last_name AS employee_last_name'''
 
 
 def _connect():
@@ -42,10 +45,11 @@ def _where(*, search=None, action=None, actor_id=None, entity_type=None, outcome
         escaped = search.strip().casefold().replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
         clauses.append('''(casefold(e.first_name || ' ' || e.last_name) LIKE ? ESCAPE '\\'
             OR casefold(e.employee_code) LIKE ? ESCAPE '\\'
-            OR casefold(COALESCE(a.actor_name,u.username)) LIKE ? ESCAPE '\\'
+            OR casefold(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,''))) LIKE ? ESCAPE '\\'
+            OR casefold(COALESCE(u.email,u.username,a.actor_name)) LIKE ? ESCAPE '\\'
             OR casefold(a.operation_id) LIKE ? ESCAPE '\\'
             OR CAST(a.audit_id AS TEXT)=?)''')
-        parameters.extend([f'%{escaped}%']*4 + [search.strip()])
+        parameters.extend([f'%{escaped}%']*5 + [search.strip()])
     if from_date:
         clauses.append('substr(a.created_at,1,10)>=?')
         parameters.append(str(from_date))
@@ -85,13 +89,15 @@ def event_view(row):
             before = {k:v for k,v in before.items() if k not in ('reason','change_reason','change_trigger','authorization_reference')}
             after = {k:v for k,v in after.items() if k not in ('reason','change_reason','change_trigger','authorization_reference')}
     old, new = changed_values(before, after) if row['outcome']=='SUCCESS' else ({},{})
+    actor_name = ' '.join(filter(None, (row['actor_first_name'], row['actor_last_name']))).strip()
+    actor_name = actor_name or row['actor_name'] or row['actor_username'] or 'Not recorded'
     return {
         'id':row['audit_id'], 'operation_id':row['operation_id'] or f"legacy-{row['audit_id']}",
         'timestamp':row['created_at'], 'action':row['action'],
         'entity_type':row['entity_type'], 'entity_id':row['entity_id'],
         'employee':{'id':row['employee_id'], 'code':row['employee_code'],
-                    'name':f"{row['first_name']} {row['last_name']}"} if row['employee_code'] else None,
-        'actor':{'id':row['user_id'], 'name':row['actor_name'] or row['username'] or 'Not recorded', 'role':row['role']},
+                    'name':f"{row['employee_first_name']} {row['employee_last_name']}"} if row['employee_code'] else None,
+        'actor':{'id':row['user_id'], 'name':actor_name, 'email':row['actor_email'], 'role':row['actor_role']},
         'outcome':row['outcome'], 'reason':row['reason'] or (_json(row['new_values']).get('reason') if legacy else None),
         'metadata':metadata, 'changes':[{'field':key,'before':old[key],'after':new[key]} for key in old],
         'legacy':legacy,
@@ -121,10 +127,14 @@ def list_events(*, page=1, page_size=20, **filters):
 
 def audit_options():
     with closing(_connect()) as connection:
-        actors = connection.execute('SELECT user_id AS id, username AS name, role FROM app_user ORDER BY username').fetchall()
+        actors = connection.execute('''SELECT user_id AS id, email,
+            TRIM(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) AS full_name,
+            username, role FROM app_user ORDER BY first_name, last_name, username''').fetchall()
         actions = connection.execute('SELECT DISTINCT action FROM audit_log ORDER BY action').fetchall()
         targets = connection.execute('SELECT DISTINCT entity_type FROM audit_log ORDER BY entity_type').fetchall()
-    return {'actors':[dict(row) for row in actors], 'actions':[row[0] for row in actions], 'entity_types':[row[0] for row in targets]}
+    return {'actors':[{'id':row['id'], 'name':row['full_name'] or row['username'],
+                       'email':row['email'], 'role':row['role']} for row in actors],
+            'actions':[row[0] for row in actions], 'entity_types':[row[0] for row in targets]}
 
 
 def csv_safe(value):
