@@ -8,10 +8,10 @@ import {
 } from 'recharts'
 import { Badge } from '@/components/ui/badge'
 import { DateRangePicker } from '@/components/product/DateRangePicker'
+import { FilterSelect } from '@/components/product/FilterSelect'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Popover, PopoverPopup, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetDescription, SheetFooter, SheetHeader, SheetPanel, SheetPopup, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -33,19 +33,6 @@ function money(amount: number | null, currency: Currency | null, frequency = '')
 function count(value: number) { return value.toLocaleString() }
 function labelDate(value: string) { return value ? formatDate(value) : '—' }
 function displayRate(value: string) { return Number(value).toPrecision(10).replace(/0+$/, '').replace(/\.$/, '') }
-
-function FilterSelect({ label, value, values, onChange }: {
-  label: string; value: string; values: { value: string; label: string }[]; onChange: (value: string) => void
-}) {
-  const emptyLabel = ({ Country: 'All countries', Department: 'All departments', Role: 'All roles', Status: 'All statuses', Location: 'All locations' } as Record<string, string>)[label] ?? 'All'
-  return <div className="min-w-0">
-    <span className="mb-1.5 block text-[13px] font-medium text-muted-foreground">{label}</span>
-    <Select value={value || 'all'} onValueChange={(next) => onChange(next === 'all' ? '' : String(next))}>
-      <SelectTrigger aria-label={label} className="w-full min-w-0"><SelectValue>{(selected: string | null) => selected === 'all' ? emptyLabel : values.find((option) => option.value === selected)?.label ?? selected}</SelectValue></SelectTrigger>
-      <SelectPopup><SelectItem value="all">{emptyLabel}</SelectItem>{values.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectPopup>
-    </Select>
-  </div>
-}
 
 function Methodology({ open, onOpenChange, data }: {
   open: boolean; onOpenChange: (value: boolean) => void; data: AnalyticsResult

@@ -1,4 +1,4 @@
-import { apiFetch, downloadFile, parseResponse } from '@/lib/api'
+import { apiFetch, downloadFile, parseResponse, presentParams } from '@/lib/api'
 import type { Currency, DirectoryOptions } from '@/features/employees/api'
 
 export type Metric = 'base' | 'variable' | 'allowances' | 'target'
@@ -75,9 +75,7 @@ export type AnalyticsResult = {
   }
 }
 export function analyticsParams(query: AnalyticsQuery) {
-  const params = new URLSearchParams()
-  for (const [key, value] of Object.entries(query)) if (value) params.set(key, value)
-  return params
+  return presentParams(query)
 }
 export async function getAnalytics(query: AnalyticsQuery, signal?: AbortSignal): Promise<AnalyticsResult> {
   return parseResponse<AnalyticsResult>(await apiFetch(`/api/analytics/compensation?${analyticsParams(query)}`, { signal }))

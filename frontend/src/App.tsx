@@ -157,7 +157,7 @@ function NavContents({ onEmployees, onAnalytics, onAudit, onAdministration, audi
 
 function App() {
   const [user, setUser] = useState<AuthenticatedUser | null>(null)
-  const [restoringUser, setRestoringUser] = useState(true)
+  const [restoringUser, setRestoringUser] = useState(() => accessToken() !== null)
   const [location, setLocation] = useState<LocationState>(readLocation)
   const locationRef = useRef(location)
   const [navOpen, setNavOpen] = useState(false)
@@ -167,7 +167,7 @@ function App() {
   const [formDirty, setFormDirty] = useState(false)
 
   useEffect(() => {
-    if (accessToken() === null) { setRestoringUser(false); return }
+    if (accessToken() === null) return
     getCurrentUser().then(setUser).catch(() => rememberAccessToken(null)).finally(() => setRestoringUser(false))
   }, [])
 

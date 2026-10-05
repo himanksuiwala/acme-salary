@@ -19,22 +19,14 @@ import { downloadEmployeeCompensation, getEmployeeDetail } from "./api";
 import { formatDate, formatMoney, statusLabel } from "./format";
 import { EmployeeAuditCard } from "@/components/product/EmployeeAuditCard";
 import { EditEmployeeSheet } from "./EditEmployeeSheet";
+import { packageTotals } from "./compensationMath";
 
 function utcToday() {
   return new Date().toISOString().slice(0, 10);
 }
-function annual(amount: number, frequency: string): number | null {
-  return frequency === "ANNUAL" ? amount : frequency === "MONTHLY" ? amount * 12 : null;
-}
 
 function PackageDetails({ item, condensed = false }: { item: CompensationPackage; condensed?: boolean }) {
-  const base = annual(item.base_pay, item.pay_frequency);
-  const variable = item.variable_pay === null ? null : annual(item.variable_pay, item.pay_frequency);
-  const allowances = item.allowances.map((value) => annual(value.amount, value.frequency));
-  const total =
-    base !== null && variable !== null && allowances.every((value) => value !== null)
-      ? base + variable + allowances.reduce<number>((sum, value) => sum + (value ?? 0), 0)
-      : null;
+  const { total } = packageTotals(item);
   return (
     <div className="space-y-5">
       <div className={condensed ? "grid gap-5" : "grid gap-5 sm:grid-cols-2"}>

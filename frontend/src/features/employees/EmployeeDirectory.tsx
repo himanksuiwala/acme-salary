@@ -6,12 +6,12 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ContextInfo } from '@/components/product/ContextInfo'
 import { DatePicker } from '@/components/product/DatePicker'
+import { FilterSelect } from '@/components/product/FilterSelect'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from '@/components/ui/menu'
 import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination'
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetDescription, SheetFooter, SheetHeader, SheetPanel, SheetPopup, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -28,31 +28,6 @@ type LoadState = { key: string; data: DirectoryResponse | null; error: string | 
 const columnNames: Record<Column, string> = {
   role: 'Role and department', location: 'Location', status: 'Status',
   pay: 'Current base pay', package: 'Package state',
-}
-
-function FilterSelect({ label, value, values, onChange, selectClassName, showLabel = true, stacked = false }: {
-  label: string
-  value: string
-  values: { value: string; label: string }[]
-  onChange: (value: string) => void
-  selectClassName?: string
-  showLabel?: boolean
-  stacked?: boolean
-}) {
-  const emptyLabel = ({ Country: 'All countries', Department: 'All departments', Role: 'All roles', Status: 'All statuses', Package: 'All package states', Location: 'All locations' } as Record<string, string>)[label] ?? 'All'
-  const selectedLabel = values.find((item) => item.value === value)?.label ?? (value || emptyLabel)
-  return (
-    <div className={stacked ? 'min-w-0' : 'flex min-w-0 shrink-0 items-center gap-1.5'}>
-      {showLabel && <span className={stacked ? 'mb-1.5 block text-[13px] font-medium text-muted-foreground' : 'shrink-0 text-[13px] font-medium text-muted-foreground'}>{label}{stacked ? '' : ':'}</span>}
-      <Select value={value || 'all'} onValueChange={(next) => onChange(next === 'all' ? '' : String(next))}>
-        <SelectTrigger aria-label={label} title={selectedLabel} size={stacked ? 'default' : 'sm'} className={`min-w-0 ${selectClassName ?? 'w-full'}`}><SelectValue>{(selected: string | null) => selected === 'all' ? emptyLabel : values.find((item) => item.value === selected)?.label ?? selected}</SelectValue></SelectTrigger>
-        <SelectPopup>
-          <SelectItem value="all">{emptyLabel}</SelectItem>
-          {values.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
-        </SelectPopup>
-      </Select>
-    </div>
-  )
 }
 
 function EmployeeName({ employee, onOpen }: { employee: Employee; onOpen?: () => void }) {
@@ -287,7 +262,7 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
 
       {data && data.total > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card px-4 py-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground"><span>Rows per page</span><FilterSelect label="Rows" showLabel={false} selectClassName="w-20" value={String(query.page_size)} values={[20, 50, 100].map((size) => ({ value: String(size), label: String(size) }))} onChange={(value) => changeFilter({ page_size: Number(value) })} /><span className="ml-2 tabular-nums">Page {data.page} of {totalPages}</span></div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><span>Rows per page</span><FilterSelect label="Rows" showLabel={false} stacked={false} emptyLabel="Rows" selectClassName="w-20" value={String(query.page_size)} values={[20, 50, 100].map((size) => ({ value: String(size), label: String(size) }))} onChange={(value) => changeFilter({ page_size: Number(value) })} /><span className="ml-2 tabular-nums">Page {data.page} of {totalPages}</span></div>
           <Pagination className="mx-0 w-auto"><PaginationContent>
             <PaginationItem><Button aria-label="Previous page" disabled={data.page <= 1} size="sm" variant="ghost" onClick={() => changeFilter({ page: data.page - 1 })}>Previous</Button></PaginationItem>
             {Array.from(new Set([1, data.page - 1, data.page, data.page + 1, totalPages].filter((page) => page >= 1 && page <= totalPages))).sort((a, b) => a - b).map((page) => <PaginationItem key={page}><Button aria-label={`Page ${page}`} aria-current={page === data.page ? 'page' : undefined} size="icon-sm" variant={page === data.page ? 'outline' : 'ghost'} onClick={() => changeFilter({ page })}>{page}</Button></PaginationItem>)}

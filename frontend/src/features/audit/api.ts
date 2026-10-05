@@ -1,4 +1,4 @@
-import { apiFetch, downloadFile, parseResponse } from '@/lib/api'
+import { apiFetch, downloadFile, parseResponse, presentParams } from '@/lib/api'
 import type { Currency } from '@/features/employees/api'
 
 export type AuditQuery = {
@@ -35,8 +35,7 @@ export type AuditOptions = {
   actors: { id: number; name: string; email: string; role: string }[]; actions: string[]; entity_types: string[]
 }
 export function auditParams(query: AuditQuery, includePage = true) {
-  const params = new URLSearchParams()
-  for (const key of auditFilterKeys) if (query[key]) params.set(key, query[key])
+  const params = presentParams(query, auditFilterKeys)
   if (includePage) {
     params.set('page', String(query.page))
     params.set('page_size', String(query.page_size))

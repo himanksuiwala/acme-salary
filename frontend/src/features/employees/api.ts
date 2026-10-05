@@ -1,4 +1,4 @@
-import { apiFetch, downloadFile, parseResponse } from '@/lib/api'
+import { apiFetch, downloadFile, parseResponse, presentParams } from '@/lib/api'
 export { ApiError } from '@/lib/api'
 
 export type Currency = {
@@ -131,10 +131,7 @@ export type EmployeeEdit = Pick<EmployeeSummary, 'first_name' | 'last_name' | 'e
 }
 
 export function queryParams(query: DirectoryQuery, includePage = true): URLSearchParams {
-  const params = new URLSearchParams()
-  for (const key of ['search', 'country', 'department', 'role', 'status', 'package_state', 'as_of', 'location_id', 'employed_as_of'] as const) {
-    if (query[key]) params.set(key, query[key])
-  }
+  const params = presentParams(query, ['search', 'country', 'department', 'role', 'status', 'package_state', 'as_of', 'location_id', 'employed_as_of'])
   if (includePage) {
     params.set('page', String(query.page))
     params.set('page_size', String(query.page_size))

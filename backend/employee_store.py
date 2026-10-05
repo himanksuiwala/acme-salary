@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from backend.database import connect_database
 from backend.audit import audited, package_fields, record_event, request_export
+from backend.audit_store import csv_safe
 
 
 class EmployeeNotFound(Exception):
@@ -366,16 +367,11 @@ def export_directory(*, search: str | None, country: str | None,
                 "ORDER BY e.employee_code COLLATE NOCASE, e.employee_id", parameters,
             ).fetchall()
             for row in rows:
-                # Quoting does not stop spreadsheet software evaluating formulas in text cells.
-                def safe(value):
-                    text = "" if value is None else str(value)
-                    return "'" + text if text.lstrip().startswith(("=", "+", "-", "@")) else text
-
-                writer.writerow((safe(row["employee_code"]), safe(row["first_name"]),
-                                 safe(row["last_name"]), safe(row["email"]),
-                                 safe(row["job_title"]), safe(row["department_code"]),
-                                 safe(row["country_code"]), safe(row["location_name"]),
-                                 safe(row["status"]), row["package_state"],
+                writer.writerow((csv_safe(row["employee_code"]), csv_safe(row["first_name"]),
+                                 csv_safe(row["last_name"]), csv_safe(row["email"]),
+                                 csv_safe(row["job_title"]), csv_safe(row["department_code"]),
+                                 csv_safe(row["country_code"]), csv_safe(row["location_name"]),
+                                 csv_safe(row["status"]), row["package_state"],
                                  row["current_base_pay"] if row["current_base_pay"] is not None else "",
                                  row["current_currency_code"] or "",
                                  row["current_pay_frequency"] or ""))
@@ -495,17 +491,14 @@ def export_employee_compensation(employee_id: int, as_of: date | None = None) ->
     writer.writerow(("employee_code", "employee_name", "as_of_utc", "package_id", "effective_from",
                      "effective_to", "base_pay_minor_units", "variable_pay_minor_units", "currency_code",
                      "pay_frequency", "allowance_type", "allowance_minor_units", "allowance_frequency", "reason"))
-    def safe(value):
-        content = "" if value is None else str(value)
-        return "'" + content if content.lstrip().startswith(("=", "+", "-", "@")) else content
     for package in sorted(packages, key=lambda item: (item["effective_from"], item["id"])):
         for allowance in package["allowances"] or [None]:
-            writer.writerow((safe(employee["employee_code"]), safe(employee["first_name"] + " " + employee["last_name"]),
+            writer.writerow((csv_safe(employee["employee_code"]), csv_safe(employee["first_name"] + " " + employee["last_name"]),
                              detail["as_of"], package["id"], package["effective_from"], package["effective_to"] or "",
                              package["base_pay"], package["variable_pay"] if package["variable_pay"] is not None else "",
                              package["currency"]["code"], package["pay_frequency"],
-                             safe(allowance["type_name"]) if allowance else "", allowance["amount"] if allowance else "",
-                             allowance["frequency"] if allowance else "", safe(package["change_reason"])))
+                             csv_safe(allowance["type_name"]) if allowance else "", allowance["amount"] if allowance else "",
+                             allowance["frequency"] if allowance else "", csv_safe(package["change_reason"])))
     with closing(_connect()) as connection:
         with connection:
             request_export(connection, dataset='Employee compensation', employee_ids=[employee_id],

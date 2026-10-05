@@ -40,6 +40,15 @@ export async function parseResponse<T>(response: Response): Promise<T> {
   throw new ApiError(detail, response.status)
 }
 
+export function presentParams<T extends Record<string, unknown>>(query: T, keys: readonly (keyof T)[] = Object.keys(query) as (keyof T)[]): URLSearchParams {
+  const params = new URLSearchParams()
+  for (const key of keys) {
+    const value = query[key]
+    if (value !== undefined && value !== null && value !== '') params.set(String(key), String(value))
+  }
+  return params
+}
+
 export async function downloadFile(path: string, filename: string): Promise<void> {
   const response = await apiFetch(path)
   if (!response.ok) { await parseResponse<never>(response); return }
