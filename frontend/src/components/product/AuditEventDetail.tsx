@@ -1,6 +1,6 @@
 import { ArrowRightIcon, ClockIcon, InfoIcon } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
-import { formatDate, formatMoney, statusLabel } from '@/features/employees/format'
+import { formatDate, formatMoney, roleLabel, statusLabel } from '@/features/employees/format'
 import type { AuditEvent, AuditValue } from '@/features/audit/api'
 
 import { actionLabel, auditTimestamp, fieldLabel } from '@/features/audit/format'
@@ -24,7 +24,8 @@ function valueLabel(value: AuditValue, field: string, event: AuditEvent, side: '
     return formatMoney(value, currency, frequency)
   }
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return formatDate(value)
-  return typeof value === 'string' && (['pay_frequency', 'status', 'employment_type'].includes(field) || field.endsWith('.frequency')) ? statusLabel(value) : String(value)
+  if (typeof value === 'string' && (field === 'role' || /^(HR|SYS)_/.test(value))) return roleLabel(value)
+  return typeof value === 'string' && (['pay_frequency', 'status', 'employment_type'].includes(field) || field.endsWith('.frequency') || /^[A-Z]+(?:_[A-Z]+)+$/.test(value)) ? statusLabel(value) : String(value)
 }
 
 export function AuditEventDetail({ event }: { event: AuditEvent }) {

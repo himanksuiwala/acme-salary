@@ -62,7 +62,7 @@ class SeedDataTests(unittest.TestCase):
                 self.assertEqual(
                     connection.execute("SELECT COUNT(*) FROM employee_compensation").fetchone()[0], 100
                 )
-                self.assertEqual(connection.execute("SELECT COUNT(*) FROM app_user").fetchone()[0], 2)
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM app_user").fetchone()[0], 0)
                 self.assertEqual(connection.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0], 0)
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
                 self.assertEqual(connection.execute("PRAGMA integrity_check").fetchone()[0], "ok")

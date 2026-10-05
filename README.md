@@ -21,7 +21,7 @@ backend/.venv/bin/python -m pip install -r backend/requirements.txt
 npm --prefix frontend ci
 ```
 
-The backend uses `backend/data/app.db` by default. To change the location, copy `backend/.env.example` to `backend/.env` and edit `DB_PATH`. Relative paths are resolved from `backend/`. The virtual environment, `.env`, and SQLite database are ignored by Git.
+The backend uses `backend/data/app.db` by default. Copy `backend/.env.example` to `backend/.env` and set a random `JWT_SECRET_KEY` of at least 32 bytes plus `JWT_ACCESS_MINUTES` (30 is the suggested value). For a new database, also set `AUTH_BOOTSTRAP_EMAIL` and `AUTH_BOOTSTRAP_PASSWORD` to create the first admin. Relative database paths are resolved from `backend/`. The virtual environment, `.env`, and SQLite database are ignored by Git.
 
 The API initializes a fresh database on startup. To initialize it without starting the API, run:
 
@@ -29,7 +29,9 @@ The API initializes a fresh database on startup. To initialize it without starti
 backend/.venv/bin/python -m backend.init_db
 ```
 
-Initialization is safe to repeat and migrates existing version 1 or 2 databases to version 3 without removing their records. It creates only two `app_user` records: `Admin@acme.org` (the normal human actor) and `SYSTEM` (for automated actions). Neither has a password yet, and authentication is not implemented. Manual changes should use the human actor; automated changes should use SYSTEM. Other tables start empty.
+Initialization is safe to repeat and migrates existing databases through schema version 7 without removing users or audit records. Existing plaintext passwords are converted to Argon2 hashes and the plaintext column is removed. Existing HR roles become `HR`; the system administrator becomes `ADMIN`. Existing accounts keep their email addresses and passwords. A new database starts with only the environment-configured bootstrap admin; other business tables start empty.
+
+`POST /auth/login` accepts JSON `{"email":"…","password":"…"}` and returns a short-lived JWT access token. `GET /auth/me` resolves the active account from that token. The frontend keeps the token in tab session storage, sends it as `Authorization: Bearer <token>`, and returns to sign-in on a 401 response or logout. All employee, analytics, export, and audit endpoints require an active `ADMIN` or `HR` account. The `/api/health` endpoint remains public. JWTs contain only a user ID and expiration time; account roles are read from the database on each request.
 
 Every table has `created_at` and `updated_at` UTC timestamps. SQLite fills them on insert and refreshes `updated_at` when a row changes.
 
@@ -69,11 +71,11 @@ The API exposes:
 See the [API contract](specs/001-employee-compensation-api/contracts/employee-compensation-api.md) for request and response shapes and error codes. A quick read example:
 
 ```bash
-curl 'http://127.0.0.1:8000/api/employees?country=IN&page=1&page_size=20'
-curl 'http://127.0.0.1:8000/api/employees/1/compensation'
+curl -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8000/api/employees?country=IN&page=1&page_size=20'
+curl -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8000/api/employees/1/compensation'
 ```
 
-**Local development only:** These salary endpoints, including export, have no authentication or authorization. Successful changes and exports are temporarily attributed to the seeded `Admin@acme.org` user for auditing; this does not identify the actual caller. The intended human access role is `NORMAL_USER` for HR platform users; `SYSTEM` is reserved for automated configuration work. Add real authentication, role and country-scope enforcement, and caller-specific audit attribution before exposing this API beyond a local development environment.
+Authentication and the two application roles are implemented within FastAPI. Authorization currently grants both `ADMIN` and `HR` access to the existing organization-wide workspace; employee self-service and finer scopes are not defined.
 
 The profile shows stored employee, package, and audit facts. Payroll entity, cost center, grade, approval workflow, and historical organization snapshots from the design handoff have no corresponding records or contract yet. The profile therefore omits them. Edit details currently covers identity, employment type, department, location, status, and termination date; manager assignment and formal status-transition rules require separate backend work.
 
@@ -103,10 +105,9 @@ with operation summaries and affected-employee entries. Completion means the ser
 finished sending the response; it does not prove a file was saved or opened. Audit reports
 exclude their own export events from the snapshot. Counts deduplicate export operations.
 
-Authentication remains deferred: the fixed local `Admin@acme.org` is not an authenticated
-individual. Trusted technical processes can call the central writer with `actor_name="SYSTEM"`.
+Technical processes can call the central writer with an explicit active actor name. Migrated databases retain the existing `SYSTEM` audit actor.
 Future imports, account changes and configuration workflows must use this writer; those
-mutation APIs and real authorization/country scopes are not implemented in this feature.
+mutation APIs and country scopes are not implemented in this feature.
 See [the audit specification and contract](specs/002-audit-trail/spec.md).
 
 ## Spec-driven workflow

@@ -1,4 +1,4 @@
--- Version 5. Dates use YYYY-MM-DD text; monetary amounts use integer minor units.
+-- Version 7. Dates use YYYY-MM-DD text; monetary amounts use integer minor units.
 BEGIN IMMEDIATE;
 
 CREATE TABLE currency (
@@ -118,14 +118,16 @@ CREATE TABLE employee_allowance (
 CREATE TABLE app_user (
     user_id INTEGER PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
-    email TEXT UNIQUE,
-    password_hash TEXT,
-    role TEXT NOT NULL CHECK (role <> ''),
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
+    role TEXT NOT NULL CHECK (role IN ('ADMIN', 'HR')),
     employee_id INTEGER REFERENCES employee(employee_id) ON DELETE RESTRICT,
     status TEXT NOT NULL CHECK (status <> ''),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (role <> 'SYSTEM' OR password_hash IS NULL)
+    CHECK (status IN ('ACTIVE', 'INACTIVE'))
 );
 
 CREATE TABLE audit_log (
@@ -185,5 +187,5 @@ CREATE INDEX allowance_type_idx ON employee_allowance(allowance_type_id);
 CREATE INDEX app_user_employee_idx ON app_user(employee_id);
 CREATE INDEX audit_user_idx ON audit_log(user_id);
 
-PRAGMA user_version = 5;
+PRAGMA user_version = 7;
 COMMIT;

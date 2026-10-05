@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import type { DirectoryOptions, DirectoryQuery, DirectoryResponse, Employee } from './api'
 import { downloadDirectory, getDirectoryOptions, getEmployees } from './api'
 import { CreateEmployeeSheet } from './CreateEmployeeSheet'
-import { formatDate, formatMoney, packageLabels, statusLabel } from './format'
+import { formatDate, formatMoney, packageLabels, roleLabel, statusLabel } from './format'
 import { PackageBadge } from './PackageBadge'
 
 type QueryPatch = Partial<DirectoryQuery>
@@ -210,7 +210,7 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
     { key: 'search', label: 'Search', value: query.search, display: query.search },
     { key: 'country', label: 'Country', value: query.country, display: options?.countries.find((item) => item.code === query.country)?.name ?? query.country },
     { key: 'department', label: 'Department', value: query.department, display: options?.departments.find((item) => item.code === query.department)?.name ?? query.department },
-    { key: 'role', label: 'Role', value: query.role, display: query.role },
+    { key: 'role', label: 'Role', value: query.role, display: roleLabel(query.role) },
     { key: 'status', label: 'Status', value: query.status, display: statusLabel(query.status) },
     { key: 'package_state', label: 'Package', value: query.package_state, display: packageLabels[query.package_state as keyof typeof packageLabels] ?? query.package_state },
     { key: 'as_of', label: 'As of UTC', value: query.as_of, display: query.as_of ? formatDate(query.as_of) : '' },
@@ -272,7 +272,7 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
         {optionsError && <p role="alert" className="rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm text-warning-foreground">Filter choices unavailable. <Button size="xs" variant="ghost" onClick={() => setRetry((value) => value + 1)}>Retry</Button></p>}
         <FilterSelect stacked label="Country" value={query.country} values={options?.countries.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => changeFilter({ country: value })} />
         <FilterSelect stacked label="Department" value={query.department} values={options?.departments.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => changeFilter({ department: value })} />
-        <FilterSelect stacked label="Role" value={query.role} values={options?.roles.map((item) => ({ value: item, label: item })) ?? []} onChange={(value) => changeFilter({ role: value })} />
+        <FilterSelect stacked label="Role" value={query.role} values={options?.roles.map((item) => ({ value: item, label: roleLabel(item) })) ?? []} onChange={(value) => changeFilter({ role: value })} />
         <FilterSelect stacked label="Status" value={query.status} values={(options?.statuses ?? ['ACTIVE']).map((item) => ({ value: item, label: statusLabel(item) }))} onChange={(value) => changeFilter({ status: value })} />
         <FilterSelect stacked label="Package" value={query.package_state} values={(options?.package_states ?? []).map((item) => ({ value: item, label: packageLabels[item] }))} onChange={(value) => changeFilter({ package_state: value })} />
         <FilterSelect stacked label="Location" value={query.location_id} values={options?.locations.map((item) => ({ value: String(item.id), label: `${item.name}, ${item.country_name}` })) ?? []} onChange={(value) => changeFilter({ location_id: value })} />

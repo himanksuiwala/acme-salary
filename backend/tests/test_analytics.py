@@ -10,6 +10,7 @@ from unittest.mock import patch
 from backend.database import connect_database, initialize_database
 from backend.fx_reference import FX_REFERENCE_DATE, FX_REFERENCE_SOURCE, seed_usd_reference_rates, usd_rate
 from backend.main import app
+from backend.auth import create_access_token
 
 
 def request(path, query="", raw=False):
@@ -21,7 +22,8 @@ def request(path, query="", raw=False):
     scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
              "method": "GET", "scheme": "http", "server": ("test", 80),
              "client": ("127.0.0.1", 12345), "path": path,
-             "raw_path": path.encode(), "query_string": query.encode(), "headers": []}
+             "raw_path": path.encode(), "query_string": query.encode(),
+             "headers": [(b"authorization", f"Bearer {create_access_token(1)}".encode())]}
     asyncio.run(app(scope, receive, send))
     status = next(m["status"] for m in messages if m["type"] == "http.response.start")
     content = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.response.body")
@@ -32,7 +34,13 @@ class AnalyticsTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        env = patch.dict(os.environ, {"DB_PATH": str(Path(directory.name) / "test.db")})
+        env = patch.dict(os.environ, {
+            "DB_PATH": str(Path(directory.name) / "test.db"),
+            "JWT_SECRET_KEY": "test-only-jwt-secret-with-at-least-32-bytes",
+            "JWT_ACCESS_MINUTES": "30",
+            "AUTH_BOOTSTRAP_EMAIL": "Admin@acme.org",
+            "AUTH_BOOTSTRAP_PASSWORD": "test-only-password",
+        })
         env.start()
         self.addCleanup(env.stop)
         initialize_database()
@@ -187,7 +195,7 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_version_five_reinitializes_without_data_loss(self):
         initialize_database()
-        self.assertEqual(self.db.execute("PRAGMA user_version").fetchone()[0], 5)
+        self.assertEqual(self.db.execute("PRAGMA user_version").fetchone()[0], 7)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM employee").fetchone()[0], 5)
 
     def test_version_four_migration_adds_fx_without_touching_salaries(self):
@@ -195,6 +203,6 @@ class AnalyticsTests(unittest.TestCase):
             self.db.execute("DROP TABLE fx_rate")
             self.db.execute("PRAGMA user_version=4")
         initialize_database()
-        self.assertEqual(self.db.execute("PRAGMA user_version").fetchone()[0], 5)
+        self.assertEqual(self.db.execute("PRAGMA user_version").fetchone()[0], 7)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM employee_compensation").fetchone()[0], 4)
         self.assertIsNotNone(self.db.execute("SELECT name FROM sqlite_master WHERE name='fx_rate'").fetchone())

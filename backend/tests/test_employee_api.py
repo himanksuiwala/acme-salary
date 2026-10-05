@@ -11,10 +11,11 @@ from unittest.mock import patch
 
 from backend.database import connect_database, initialize_database
 from backend.main import app
+from backend.auth import create_access_token
 
 
 def request(method: str, path: str, *, query: str = "", body: dict | None = None,
-            raw: bool = False, headers: list | None = None):
+            raw: bool = False, headers: list | None = None, authenticated: bool = True):
     payload = json.dumps(body).encode() if body is not None else b""
     messages = []
     sent = False
@@ -34,7 +35,10 @@ def request(method: str, path: str, *, query: str = "", body: dict | None = None
         "method": method, "scheme": "http", "server": ("test", 80),
         "client": ("127.0.0.1", 12345), "path": path,
         "raw_path": path.encode(), "query_string": query.encode(),
-        "headers": [(b"content-type", b"application/json"), *(headers or [])],
+        "headers": [(b"content-type", b"application/json"),
+                    *([(b"authorization", f"Bearer {create_access_token(1)}".encode())]
+                      if authenticated and path.startswith('/api/') else []),
+                    *(headers or [])],
     }
     asyncio.run(app(scope, receive, send))
     status = next(message["status"] for message in messages if message["type"] == "http.response.start")
@@ -48,7 +52,13 @@ class EmployeeApiTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        env = patch.dict(os.environ, {"DB_PATH": str(Path(directory.name) / "test.db")})
+        env = patch.dict(os.environ, {
+            "DB_PATH": str(Path(directory.name) / "test.db"),
+            "JWT_SECRET_KEY": "test-only-jwt-secret-with-at-least-32-bytes",
+            "JWT_ACCESS_MINUTES": "30",
+            "AUTH_BOOTSTRAP_EMAIL": "Admin@acme.org",
+            "AUTH_BOOTSTRAP_PASSWORD": "test-only-password",
+        })
         env.start()
         self.addCleanup(env.stop)
         initialize_database()

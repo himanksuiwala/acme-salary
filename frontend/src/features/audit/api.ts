@@ -1,4 +1,4 @@
-import { downloadFile, parseResponse } from '@/lib/api'
+import { apiFetch, downloadFile, parseResponse } from '@/lib/api'
 import type { Currency } from '@/features/employees/api'
 
 export type AuditQuery = {
@@ -45,10 +45,10 @@ export function auditParams(query: AuditQuery, includePage = true) {
 }
 export async function getAudit(query: AuditQuery, employeeId?: number, signal?: AbortSignal) {
   const path = employeeId ? `/api/employees/${employeeId}/audit` : '/api/audit/events'
-  return parseResponse<AuditResponse>(await fetch(`${path}?${auditParams(query)}`, { signal }))
+  return parseResponse<AuditResponse>(await apiFetch(`${path}?${auditParams(query)}`, { signal }))
 }
 export async function getAuditOptions(signal?: AbortSignal) {
-  return parseResponse<AuditOptions>(await fetch('/api/audit/options', { signal }))
+  return parseResponse<AuditOptions>(await apiFetch('/api/audit/options', { signal }))
 }
 export async function downloadAudit(query: AuditQuery, employeeId?: number) {
   const params = auditParams(query, false)

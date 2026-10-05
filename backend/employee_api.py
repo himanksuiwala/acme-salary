@@ -1,4 +1,4 @@
-"""Local-development employee and compensation REST routes."""
+"""Employee and compensation REST routes."""
 
 from datetime import date
 from typing import Annotated, Literal
@@ -109,7 +109,7 @@ class EmployeeEditInput(BaseModel):
 
 @router.get(
     "/employees",
-    description="Local development only: no authentication or authorization is implemented.",
+    description="List employees visible to authenticated HR and admin users.",
 )
 def employees(
     search: str | None = None, country: str | None = None,
@@ -127,7 +127,7 @@ def employees(
 
 @router.get(
     "/employees/directory-options",
-    description="Local development only: reference options have no access scoping.",
+    description="Reference options for authenticated HR and admin users.",
 )
 def directory_options() -> dict:
     return get_directory_options()
@@ -135,7 +135,7 @@ def directory_options() -> dict:
 
 @router.get(
     "/employees/export",
-    description="Local development only: exports are unauthenticated and use a fixed audit actor.",
+    description="Export the filtered employee directory.",
 )
 def export_employees(
     search: str | None = None, country: str | None = None,
@@ -156,7 +156,7 @@ def export_employees(
 @router.post(
     "/employees",
     status_code=201,
-    description="Local development only: employee creation uses a fixed audit actor.",
+    description="Create an employee and record the authenticated actor.",
 )
 def add_employee(payload: EmployeeInput) -> dict:
     try:
@@ -170,7 +170,7 @@ def add_employee(payload: EmployeeInput) -> dict:
 
 @router.patch(
     "/employees/{employee_id}",
-    description="Local development only: employee edits use a fixed audit actor.",
+    description="Update an employee and record the authenticated actor.",
 )
 def edit_employee(payload: EmployeeEditInput, employee_id: int = Path(ge=1)) -> dict:
     try:
@@ -186,7 +186,7 @@ def edit_employee(payload: EmployeeEditInput, employee_id: int = Path(ge=1)) -> 
 
 @router.get(
     "/employees/{employee_id}/compensation",
-    description="Local development only: salary data has no authentication or authorization.",
+    description="Read an employee's compensation history.",
 )
 def employee_compensation(employee_id: int = Path(ge=1), as_of: date | None = None) -> dict:
     try:
@@ -197,7 +197,7 @@ def employee_compensation(employee_id: int = Path(ge=1), as_of: date | None = No
 
 @router.get(
     "/employees/{employee_id}/compensation/export",
-    description="Local development only: employee compensation exports use a fixed audit actor.",
+    description="Export an employee's compensation history.",
 )
 def export_compensation(employee_id: int = Path(ge=1), as_of: date | None = None) -> Response:
     try:
@@ -213,7 +213,7 @@ def export_compensation(employee_id: int = Path(ge=1), as_of: date | None = None
 @router.post(
     "/employees/{employee_id}/compensation",
     status_code=201,
-    description="Local development only: writes use a fixed audit actor, not an authenticated caller.",
+    description="Create a compensation package and record the authenticated actor.",
 )
 def add_compensation(payload: CompensationInput, employee_id: int = Path(ge=1)) -> dict:
     try:

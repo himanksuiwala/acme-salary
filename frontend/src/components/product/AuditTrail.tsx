@@ -29,10 +29,10 @@ function FilterSelect({ label, value, options, onChange }: {
       <label id={id} className="mb-1.5 block text-[13px] font-medium">{label}</label>
       <Select value={value || 'all'} onValueChange={(selected) => onChange(selected === 'all' || selected === null ? '' : String(selected))}>
         <SelectTrigger aria-labelledby={id} className="min-h-11 min-w-0 sm:min-h-9">
-          <SelectValue>{(selected: string | null) => selected === 'all' || selected === null ? `All ${label.toLowerCase()}` : options.find((option) => option.value === selected)?.label ?? selected}</SelectValue>
+          <SelectValue>{(selected: string | null) => selected === 'all' || selected === null ? `All ${label.toLowerCase()}` : options.find((option) => option.value === selected)?.label ?? statusLabel(selected)}</SelectValue>
         </SelectTrigger>
         <SelectPopup><SelectItem value="all">All {label.toLowerCase()}</SelectItem>
-          {value && !options.some((option) => option.value === value) && <SelectItem value={value}>{value}</SelectItem>}
+          {value && !options.some((option) => option.value === value) && <SelectItem value={value}>{statusLabel(value)}</SelectItem>}
           {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
         </SelectPopup>
       </Select>
@@ -179,7 +179,7 @@ export function AuditTrail({ employeeId, query: controlledQuery, onQueryChange, 
           {dateError && <p role="alert" id={`${instanceId}-dates-error`} className="text-sm text-destructive-foreground">{dateError}</p>}
           {hasFilters && <div className="flex flex-wrap items-center gap-2" aria-label="Active audit filters">
             {auditFilterKeys.filter((key) => query[key]).map((key) => <Button key={key} variant="outline" size="sm" className="max-w-full min-h-10 sm:min-h-7" onClick={() => { if (key === 'search') setSearch(''); updateQuery({ [key]: '' }) }} aria-label={`Remove ${statusLabel(key)} filter`}>
-              <span className="max-w-56 truncate">{key === 'employee_id' ? employeeScopeLabel : key === 'action' ? actionLabel(query[key]) : key === 'actor_id' ? options?.actors.find((actor) => String(actor.id) === query[key])?.name ?? query[key] : `${statusLabel(key)}: ${query[key]}`}</span><XIcon aria-hidden="true" size={12} />
+              <span className="max-w-56 truncate">{key === 'employee_id' ? employeeScopeLabel : key === 'action' ? actionLabel(query[key]) : key === 'actor_id' ? options?.actors.find((actor) => String(actor.id) === query[key])?.name ?? query[key] : `${statusLabel(key)}: ${key === 'outcome' || key === 'entity_type' ? statusLabel(query[key]) : query[key]}`}</span><XIcon aria-hidden="true" size={12} />
             </Button>)}<Button variant="ghost" size="sm" className="min-h-10 sm:min-h-7" onClick={clearFilters}>Clear filters</Button>
           </div>}
         </div>

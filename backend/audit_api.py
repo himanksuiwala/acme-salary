@@ -1,4 +1,4 @@
-"""Audit reading/reporting routes. Local fixed actor; auth/scoping is deferred."""
+"""Audit reading and reporting routes."""
 from datetime import date
 from typing import Annotated, Literal
 
@@ -37,7 +37,7 @@ def filters(search: str | None = Query(None,max_length=200), action: str | None 
 Filters = Annotated[dict, Depends(filters)]
 
 
-@router.get('/audit/events', description='Local development only: audit and salary information is not access-scoped.')
+@router.get('/audit/events', description='Audit events for authenticated HR and admin users.')
 def events(query: Filters, page: int = Query(1,ge=1), page_size: int = Query(20,ge=1,le=100),
            employee_id: int | None = Query(None,ge=1)):
     return list_events(**query,employee_id=employee_id,page=page,page_size=page_size)

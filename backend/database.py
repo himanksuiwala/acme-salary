@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from backend.fx_reference import seed_usd_reference_rates
+from backend.passwords import hash_password
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -137,15 +138,61 @@ def _migrate_audit(connection: sqlite3.Connection) -> None:
         connection.execute(f"""CREATE TRIGGER IF NOT EXISTS audit_log_no_{operation.lower()}
             BEFORE {operation} ON audit_log BEGIN
             SELECT RAISE(ABORT, 'audit events are append-only'); END""")
-    connection.execute("PRAGMA user_version = 5")
+
+
+def _migrate_auth_users(connection: sqlite3.Connection) -> None:
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(app_user)")}
+    for name in ("first_name", "last_name"):
+        if name not in columns:
+            connection.execute(f"ALTER TABLE app_user ADD COLUMN {name} TEXT")
+    if "password" in columns:
+        for user_id, password, stored_hash in connection.execute(
+            "SELECT user_id,password,password_hash FROM app_user WHERE password IS NOT NULL"
+        ):
+            if not stored_hash:
+                connection.execute("UPDATE app_user SET password_hash=? WHERE user_id=?",
+                                   (hash_password(password), user_id))
+        connection.execute("ALTER TABLE app_user DROP COLUMN password")
+    connection.execute("""UPDATE app_user SET role='HR'
+        WHERE role IN ('NORMAL_USER','HR_ADMIN','HR_MANAGER','HR_SPECIALIST')""")
+    connection.execute("""UPDATE app_user SET role='ADMIN'
+        WHERE role IN ('SYSTEM','SYS_ADMIN')""")
+    connection.execute("""UPDATE app_user SET first_name=COALESCE(first_name,'Avery'),
+        last_name=COALESCE(last_name,'Patel') WHERE username='Admin@acme.org'""")
+    connection.execute("""UPDATE app_user SET first_name=COALESCE(first_name,'System'),
+        last_name=COALESCE(last_name,'Admin'), email=COALESCE(email,'system@acme.com')
+        WHERE username='SYSTEM'""")
+    connection.execute("PRAGMA user_version = 7")
+
+
+def _bootstrap_admin(connection: sqlite3.Connection) -> None:
+    display_email = os.getenv("AUTH_BOOTSTRAP_EMAIL", "").strip()
+    email = display_email.casefold()
+    password = os.getenv("AUTH_BOOTSTRAP_PASSWORD", "")
+    if bool(email) != bool(password):
+        raise RuntimeError("AUTH_BOOTSTRAP_EMAIL and AUTH_BOOTSTRAP_PASSWORD must be set together")
+    if connection.execute("""SELECT 1 FROM app_user WHERE role='ADMIN'
+        AND status='ACTIVE' AND password_hash IS NOT NULL LIMIT 1""").fetchone():
+        return
+    if not email:
+        return
+    existing = connection.execute("SELECT user_id FROM app_user WHERE lower(email)=?", (email,)).fetchone()
+    hashed = hash_password(password)
+    if existing:
+        connection.execute("""UPDATE app_user SET password_hash=?,role='ADMIN',status='ACTIVE'
+            WHERE user_id=?""", (hashed, existing[0]))
+    else:
+        connection.execute("""INSERT INTO app_user
+            (username,email,password_hash,first_name,last_name,role,status)
+            VALUES (?,?,?,'System','Admin','ADMIN','ACTIVE')""", (display_email, display_email, hashed))
 
 
 def initialize_database(path: Path | None = None) -> Path:
-    """Create or migrate the schema and seed the two application actors."""
+    """Create or migrate the schema, preserving users and audit references."""
     path = path or database_path()
     with closing(connect_database(path)) as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4, 5):
+        if version not in (0, 1, 2, 3, 4, 5, 6, 7):
             raise RuntimeError(f"Unsupported database schema version: {version}")
 
         if version == 0:
@@ -185,17 +232,9 @@ def initialize_database(path: Path | None = None) -> Path:
                     CREATE INDEX IF NOT EXISTS fx_rate_lookup_idx ON fx_rate(source_currency_id, target_currency_id, approved, rate_date DESC);""")
             _create_timestamp_triggers(connection)
             _migrate_audit(connection)
-            connection.executemany(
-                """
-                INSERT INTO app_user (username, email, password_hash, role, status)
-                VALUES (?, ?, NULL, ?, 'ACTIVE')
-                ON CONFLICT(username) DO NOTHING
-                """,
-                [
-                    ("Admin@acme.org", "Admin@acme.org", "NORMAL_USER"),
-                    ("SYSTEM", None, "SYSTEM"),
-                ],
-            )
+            if 0 < version < 7:
+                _migrate_auth_users(connection)
+            _bootstrap_admin(connection)
             seed_usd_reference_rates(connection)
 
     return path

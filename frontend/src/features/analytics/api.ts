@@ -1,4 +1,4 @@
-import { downloadFile, parseResponse } from '@/lib/api'
+import { apiFetch, downloadFile, parseResponse } from '@/lib/api'
 import type { Currency, DirectoryOptions } from '@/features/employees/api'
 
 export type Metric = 'base' | 'variable' | 'allowances' | 'target'
@@ -80,10 +80,10 @@ export function analyticsParams(query: AnalyticsQuery) {
   return params
 }
 export async function getAnalytics(query: AnalyticsQuery, signal?: AbortSignal): Promise<AnalyticsResult> {
-  return parseResponse<AnalyticsResult>(await fetch(`/api/analytics/compensation?${analyticsParams(query)}`, { signal }))
+  return parseResponse<AnalyticsResult>(await apiFetch(`/api/analytics/compensation?${analyticsParams(query)}`, { signal }))
 }
 export async function getAnalyticsOptions(signal?: AbortSignal): Promise<DirectoryOptions> {
-  return parseResponse<DirectoryOptions>(await fetch('/api/employees/directory-options', { signal }))
+  return parseResponse<DirectoryOptions>(await apiFetch('/api/employees/directory-options', { signal }))
 }
 export async function downloadAnalytics(query: AnalyticsQuery): Promise<void> {
   await downloadFile(`/api/analytics/compensation/export?${analyticsParams(query)}`, 'compensation-analytics.csv')

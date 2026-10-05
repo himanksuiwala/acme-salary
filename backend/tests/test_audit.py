@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.database import initialize_database
+from backend.auth import create_access_token
 from backend.tests import test_employee_api as fixtures
 from backend.tests.test_employee_api import request
 
@@ -16,6 +17,11 @@ class AuditTests(unittest.TestCase):
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.connection = self.fixture.connection
+        with self.connection:
+            self.connection.execute("""INSERT INTO app_user
+                (username,email,password_hash,first_name,last_name,role,status)
+                SELECT 'SYSTEM','system@acme.com',password_hash,'System','Admin','ADMIN','ACTIVE'
+                FROM app_user WHERE user_id=1""")
 
     def test_compensation_diff_scope_and_reason(self):
         self.assertEqual(request('POST', '/api/employees/1/compensation', body=self.fixture.new_package())[0], 201)
@@ -113,7 +119,8 @@ class AuditTests(unittest.TestCase):
                 raise ConnectionError('client disconnected')
         scope = {'type':'http','asgi':{'version':'3.0'},'http_version':'1.1','method':'GET',
                  'scheme':'http','server':('test',80),'client':('127.0.0.1',1),
-                 'path':'/api/employees/export','query_string':b'search=EMP001','headers':[]}
+                'path':'/api/employees/export','query_string':b'search=EMP001',
+                'headers':[(b'authorization', f'Bearer {create_access_token(1)}'.encode())]}
         with self.assertRaises(ConnectionError):
             asyncio.run(app(scope, receive, send))
         async def cancelled_send(message):

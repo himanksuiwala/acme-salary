@@ -3,7 +3,7 @@
 import sqlite3
 from contextlib import asynccontextmanager, closing
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 
 from backend.database import connect_database, initialize_database
@@ -11,19 +11,27 @@ from backend.employee_api import router as employee_router
 from backend.audit_api import router as audit_router
 from backend.analytics_api import router as analytics_router
 from backend.audit_http import AuditMiddleware
+from backend.auth import auth_config, require_roles, router as auth_router
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     initialize_database()
+    auth_config()
+    with closing(connect_database()) as connection:
+        if connection.execute("""SELECT 1 FROM app_user WHERE role='ADMIN' AND status='ACTIVE'
+            AND password_hash IS NOT NULL LIMIT 1""").fetchone() is None:
+            raise RuntimeError("Configure AUTH_BOOTSTRAP_EMAIL and AUTH_BOOTSTRAP_PASSWORD to create an admin")
     yield
 
 
 app = FastAPI(title="Employee Salary Management API", lifespan=lifespan)
 app.add_middleware(AuditMiddleware)
-app.include_router(employee_router)
-app.include_router(audit_router)
-app.include_router(analytics_router)
+workspace_access = [Depends(require_roles("ADMIN", "HR"))]
+app.include_router(employee_router, dependencies=workspace_access)
+app.include_router(audit_router, dependencies=workspace_access)
+app.include_router(analytics_router, dependencies=workspace_access)
+app.include_router(auth_router)
 
 
 @app.get("/api/health", response_model=None)

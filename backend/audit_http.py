@@ -34,7 +34,7 @@ class AuditMiddleware:
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
             return await self.app(scope, receive, send)
-        context = Operation(ip=(scope.get('client') or (None,))[0])
+        context = Operation(actor=None, ip=(scope.get('client') or (None,))[0])
         token = operation_context.set(context)
         target = sensitive_operation(scope['method'], scope['path'])
         status = 500
@@ -50,7 +50,7 @@ class AuditMiddleware:
                     await run_in_threadpool(finish_export, context)
         try:
             await self.app(scope, receive, audited_send)
-            if status >= 400 and target and not context.failure_recorded:
+            if status >= 400 and target and context.actor and not context.failure_recorded:
                 action, entity_type, employee_id = target
                 reason = {422:'Request validation failed', 404:'Target not found', 409:'Operation conflicts with existing data'}.get(status, 'Operation could not be completed')
                 await run_in_threadpool(record_failure, action, entity_type, employee_id, employee_id, reason, operation=context)
@@ -58,7 +58,7 @@ class AuditMiddleware:
             try:
                 if context.export is not None and not delivery_finished:
                     await run_in_threadpool(finish_export, context, failed=True)
-                elif target and not context.failure_recorded:
+                elif target and context.actor and not context.failure_recorded:
                     action, entity_type, employee_id = target
                     await run_in_threadpool(record_failure, action, entity_type, employee_id, employee_id,
                                             'Operation could not be completed', operation=context)

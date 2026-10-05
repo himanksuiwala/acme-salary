@@ -1,4 +1,4 @@
-"""Read-only compensation analytics endpoints for local development."""
+"""Read-only compensation analytics endpoints."""
 from datetime import date, datetime, timezone
 from typing import Literal
 
@@ -34,7 +34,7 @@ def query_args(
 AnalyticsQuery = Annotated[dict, Depends(query_args)]
 
 
-@router.get("/compensation", description="Local development only: no authentication or salary scope enforcement.")
+@router.get("/compensation", description="Compensation analytics for authenticated HR and admin users.")
 def compensation(query: AnalyticsQuery):
     try:
         return snapshot(**query)
@@ -42,7 +42,7 @@ def compensation(query: AnalyticsQuery):
         raise HTTPException(422, str(error)) from error
 
 
-@router.get("/compensation/export", description="Local development only: unauthenticated CSV export with fixed audit actor.")
+@router.get("/compensation/export", description="Export compensation analytics as CSV.")
 def export_compensation(query: AnalyticsQuery):
     try:
         content = export_snapshot(**query)

@@ -1,8 +1,8 @@
 """Central audit writing. Successful events share the caller's transaction.
 
 Decorators handle context and failures; they do not commit business data. Trusted
-technical processes pass actor_name='SYSTEM' to record_event. HTTP clients cannot
-choose an actor. Authentication is deliberately deferred for this local build.
+technical processes pass an explicit actor_name to record_event. Protected HTTP
+requests receive their actor from the validated bearer token.
 """
 import inspect
 import json
@@ -24,7 +24,7 @@ SECRET_WORDS = ('password', 'secret', 'token', 'credential', 'authorization_head
 @dataclass
 class Operation:
     id: str = field(default_factory=lambda: str(uuid4()))
-    actor: str = 'Admin@acme.org'
+    actor: str | None = 'Admin@acme.org'
     ip: str | None = None
     failure_recorded: bool = False
     export: dict | None = None

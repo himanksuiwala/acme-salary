@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { ChartBarIcon, ClockCounterClockwiseIcon, ListIcon, UsersThreeIcon } from '@phosphor-icons/react'
+import { ChartBarIcon, ClockCounterClockwiseIcon, ListIcon, SignOutIcon, UsersThreeIcon } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetPopup, SheetTitle } from '@/components/ui/sheet'
 import { EmployeeDirectory } from '@/features/employees/EmployeeDirectory'
@@ -10,6 +10,10 @@ import type { AnalyticsQuery, Group } from '@/features/analytics/api'
 import { auditFilterKeys, defaultAuditQuery } from '@/features/audit/api'
 import type { AuditQuery } from '@/features/audit/api'
 import type { DirectoryQuery } from '@/features/employees/api'
+import { LoginScreen } from '@/features/auth/LoginScreen'
+import { getCurrentUser, type AuthenticatedUser } from '@/features/auth/api'
+import { accessToken, rememberAccessToken } from '@/lib/api'
+import { roleLabel } from '@/features/employees/format'
 
 const AnalyticsScreen = lazy(() => import('@/features/analytics/AnalyticsScreen').then((module) => ({ default: module.AnalyticsScreen })))
 
@@ -92,11 +96,23 @@ function Brand() {
   )
 }
 
-function NavContents({ onEmployees, onAnalytics, onAudit, audit, analytics }: { onEmployees: () => void; onAnalytics: () => void; onAudit: () => void; audit: boolean; analytics: boolean }) {
+function UserCard({ user, onLogout }: { user: AuthenticatedUser; onLogout: () => void }) {
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email
+  const initials = [user.first_name, user.last_name].filter(Boolean).map((part) => part![0]).join('').toUpperCase() || name.slice(0, 2).toUpperCase()
+  return <div className="mx-3 mb-3 rounded-xl border bg-neutral-50 p-3">
+    <div className="flex min-w-0 items-start gap-2.5">
+      <div aria-hidden="true" className="flex size-9 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-semibold text-white">{initials}</div>
+      <div className="min-w-0"><p className="truncate text-sm font-semibold" title={name}>{name}</p><p className="truncate text-xs text-muted-foreground" title={user.email}>{user.email}</p><p className="mt-1 text-[11px] font-medium text-muted-foreground">{roleLabel(user.role)}</p></div>
+    </div>
+    <button type="button" onClick={onLogout} className="mt-3 flex w-full items-center gap-2 rounded-md border-t pt-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><SignOutIcon aria-hidden="true" size={15} />Log out</button>
+  </div>
+}
+
+function NavContents({ onEmployees, onAnalytics, onAudit, audit, analytics, user, onLogout }: { onEmployees: () => void; onAnalytics: () => void; onAudit: () => void; audit: boolean; analytics: boolean; user: AuthenticatedUser; onLogout: () => void }) {
   return (
     <>
       <Brand />
-      <nav aria-label="Main navigation" className="px-3 pt-5">
+      <nav aria-label="Main navigation" className="flex-1 px-3 pt-5">
         <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Workspace</p>
         <button type="button" aria-current={!audit && !analytics ? 'page' : undefined} onClick={onEmployees} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${!audit && !analytics ? 'bg-neutral-100 text-foreground' : 'text-muted-foreground'}`}>
           <UsersThreeIcon size={19} weight="fill" aria-hidden="true" />Employees
@@ -109,16 +125,40 @@ function NavContents({ onEmployees, onAnalytics, onAudit, audit, analytics }: { 
           <ClockCounterClockwiseIcon size={19} weight={audit ? 'fill' : 'regular'} aria-hidden="true" />Audit log
         </button>
       </nav>
+      <UserCard user={user} onLogout={onLogout} />
     </>
   )
 }
 
 function App() {
+  const [user, setUser] = useState<AuthenticatedUser | null>(null)
+  const [restoringUser, setRestoringUser] = useState(true)
   const [location, setLocation] = useState<LocationState>(readLocation)
   const locationRef = useRef(location)
   const [navOpen, setNavOpen] = useState(false)
   const navTrigger = useRef<HTMLButtonElement>(null)
   const [savedPackageId, setSavedPackageId] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (accessToken() === null) { setRestoringUser(false); return }
+    getCurrentUser().then(setUser).catch(() => rememberAccessToken(null)).finally(() => setRestoringUser(false))
+  }, [])
+
+  useEffect(() => {
+    const expired = () => { setUser(null); setNavOpen(false); setRestoringUser(false) }
+    window.addEventListener('auth:expired', expired)
+    return () => window.removeEventListener('auth:expired', expired)
+  }, [])
+
+  function onLogin(selected: AuthenticatedUser) {
+    setUser(selected)
+  }
+
+  function onLogout() {
+    rememberAccessToken(null)
+    setUser(null)
+    setNavOpen(false)
+  }
 
   useEffect(() => { locationRef.current = location }, [location])
   useEffect(() => {
@@ -227,9 +267,12 @@ function App() {
     closeCompensationForm()
   }, [closeCompensationForm])
 
+  if (restoringUser) return <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground" role="status">Loading workspace…</div>
+  if (!user) return <LoginScreen onLogin={onLogin} />
+
   return (
     <div className="min-h-svh bg-neutral-50 text-foreground">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r bg-white lg:flex"><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} audit={location.audit} analytics={location.analytics} /></aside>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r bg-white lg:flex"><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} audit={location.audit} analytics={location.analytics} user={user} onLogout={onLogout} /></aside>
       <div className="lg:pl-[232px]">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
@@ -247,7 +290,7 @@ function App() {
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetPopup finalFocus={navTrigger} side="left" aria-label="Navigation" className="max-w-[280px]">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <div className="flex min-h-full flex-col"><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} audit={location.audit} analytics={location.analytics} /></div>
+          <div className="flex min-h-full flex-col"><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} audit={location.audit} analytics={location.analytics} user={user} onLogout={onLogout} /></div>
         </SheetPopup>
       </Sheet>
     </div>

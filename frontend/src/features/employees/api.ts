@@ -1,4 +1,4 @@
-import { downloadFile, parseResponse } from '@/lib/api'
+import { apiFetch, downloadFile, parseResponse } from '@/lib/api'
 export { ApiError } from '@/lib/api'
 
 export type Currency = {
@@ -143,20 +143,20 @@ export function queryParams(query: DirectoryQuery, includePage = true): URLSearc
 }
 
 export async function getEmployees(query: DirectoryQuery, signal?: AbortSignal): Promise<DirectoryResponse> {
-  return parseResponse<DirectoryResponse>(await fetch(`/api/employees?${queryParams(query)}`, { signal }))
+  return parseResponse<DirectoryResponse>(await apiFetch(`/api/employees?${queryParams(query)}`, { signal }))
 }
 
 export async function getDirectoryOptions(signal?: AbortSignal): Promise<DirectoryOptions> {
-  return parseResponse<DirectoryOptions>(await fetch('/api/employees/directory-options', { signal }))
+  return parseResponse<DirectoryOptions>(await apiFetch('/api/employees/directory-options', { signal }))
 }
 
 export async function getEmployeeDetail(employeeId: number, asOf?: string, signal?: AbortSignal): Promise<EmployeeDetail> {
   const params = asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''
-  return parseResponse<EmployeeDetail>(await fetch(`/api/employees/${employeeId}/compensation${params}`, { signal }))
+  return parseResponse<EmployeeDetail>(await apiFetch(`/api/employees/${employeeId}/compensation${params}`, { signal }))
 }
 
 export async function createCompensation(employeeId: number, packageInput: NewCompensation): Promise<CompensationPackage> {
-  const result = await parseResponse<{ compensation: CompensationPackage }>(await fetch(`/api/employees/${employeeId}/compensation`, {
+  const result = await parseResponse<{ compensation: CompensationPackage }>(await apiFetch(`/api/employees/${employeeId}/compensation`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(packageInput),
   }))
   return result.compensation
@@ -167,7 +167,7 @@ export async function downloadEmployeeCompensation(employeeId: number, asOf: str
 }
 
 export async function createEmployee(employee: NewEmployee): Promise<EmployeeSummary> {
-  const result = await parseResponse<{ employee: EmployeeSummary }>(await fetch('/api/employees', {
+  const result = await parseResponse<{ employee: EmployeeSummary }>(await apiFetch('/api/employees', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(employee),
@@ -176,7 +176,7 @@ export async function createEmployee(employee: NewEmployee): Promise<EmployeeSum
 }
 
 export async function updateEmployee(employeeId: number, changes: EmployeeEdit): Promise<EmployeeSummary> {
-  const result = await parseResponse<{ employee: EmployeeSummary }>(await fetch(`/api/employees/${employeeId}`, {
+  const result = await parseResponse<{ employee: EmployeeSummary }>(await apiFetch(`/api/employees/${employeeId}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes),
   }))
   return result.employee

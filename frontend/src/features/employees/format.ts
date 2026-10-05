@@ -29,6 +29,14 @@ export function statusLabel(status: string): string {
   return status.toLowerCase().split('_').map((part) => part[0]?.toUpperCase() + part.slice(1)).join(' ')
 }
 
+export function roleLabel(role: string): string {
+  if (role === 'ADMIN') return 'Admin'
+  if (role === 'HR') return 'HR'
+  if (role === 'SYS_ADMIN') return 'System Admin'
+  if (!role.includes('_')) return role
+  return statusLabel(role).replace(/^Hr\b/, 'HR')
+}
+
 export const packageLabels: Record<PackageState, string> = {
   CURRENT: 'Current',
   SCHEDULED_CHANGE: 'Scheduled change',
