@@ -9,6 +9,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { DateRangePicker } from '@/components/product/DateRangePicker'
 import { FilterSelect } from '@/components/product/FilterSelect'
+import { PageContainer, PageHeader } from '@/components/product/PageLayout'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Popover, PopoverPopup, PopoverTrigger } from '@/components/ui/popover'
@@ -140,14 +141,18 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
   ] as const
   const appliedFilters = activeFilters.filter((item) => item.value)
 
-  return <div className="mx-auto w-full max-w-[1440px] space-y-6 px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
-    <header className="flex flex-wrap items-start justify-between gap-4">
-      <div><div className="flex items-center gap-1.5"><h1 className="text-[28px] font-semibold leading-9 tracking-tight">Compensation analytics</h1><Button size="icon-sm" variant="ghost" aria-label="Methodology and FX notes" title="Methodology and FX notes" onClick={() => setMethodologyOpen(true)} disabled={!data}><InfoIcon aria-hidden="true" size={17} /></Button></div><p className="mt-1.5 max-w-[65ch] text-[15px] leading-[22px] text-muted-foreground">Explore annualized pay, compare groups, and inspect compensation changes.</p></div>
-      <div className="flex flex-wrap gap-2">
+  return <PageContainer className="space-y-6">
+    <PageHeader
+      title="Compensation analytics"
+      description="Explore annualized pay, compare groups, and inspect compensation changes."
+      titleAction={<Button size="icon-sm" variant="ghost" aria-label="Methodology and FX notes" title="Methodology and FX notes" onClick={() => setMethodologyOpen(true)} disabled={!data}><InfoIcon aria-hidden="true" size={17} /></Button>}
+      actions={
+        <>
         <Button variant="outline" onClick={exportData} loading={exporting} disabled={!data || !total}><DownloadSimpleIcon aria-hidden="true" />Export snapshot</Button>
         <Button onClick={() => onViewEmployees()}><UsersThreeIcon aria-hidden="true" />View employees</Button>
-      </div>
-    </header>
+        </>
+      }
+    />
     <section aria-label="Analytics filters" className="flex flex-wrap items-center gap-2">
       <span className="mr-auto text-[13px] text-muted-foreground">{data ? `${count(total)} employees · ` : ''}Reporting currency: USD</span>
       {appliedFilters.map((item) => <Button key={item.key} size="xs" variant="outline" className="max-w-full" aria-label={`Remove ${item.label} filter`} onClick={() => update({ [item.key]: '' })}><span className="max-w-44 truncate">{item.label}: {item.display}</span>×</Button>)}
@@ -193,5 +198,5 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
       </section>
       <Methodology open={methodologyOpen} onOpenChange={setMethodologyOpen} data={data} />
     </>}
-  </div>
+  </PageContainer>
 }

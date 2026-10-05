@@ -3,10 +3,10 @@ import {
   ColumnsIcon, DownloadSimpleIcon, MagnifyingGlassIcon,
   PlusIcon, RowsIcon, SlidersHorizontalIcon, UsersThreeIcon, WarningCircleIcon, XIcon,
 } from '@phosphor-icons/react'
-import { Badge } from '@/components/ui/badge'
 import { ContextInfo } from '@/components/product/ContextInfo'
 import { DatePicker } from '@/components/product/DatePicker'
 import { FilterSelect } from '@/components/product/FilterSelect'
+import { PageContainer, PageHeader } from '@/components/product/PageLayout'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
@@ -14,90 +14,21 @@ import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from '@/components/ui/
 import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination'
 import { Sheet, SheetDescription, SheetFooter, SheetHeader, SheetPanel, SheetPopup, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import type { DirectoryOptions, DirectoryQuery, DirectoryResponse, Employee } from './api'
+import type { DirectoryOptions, DirectoryQuery, DirectoryResponse } from './api'
 import { downloadDirectory, getDirectoryOptions, getEmployees } from './api'
 import { CreateEmployeeSheet } from './CreateEmployeeSheet'
-import { formatDate, formatMoney, packageLabels, roleLabel, statusLabel } from './format'
-import { PackageBadge } from './PackageBadge'
+import { DirectoryResults, type DirectoryColumn } from './DirectoryResults'
+import { formatDate, packageLabels, roleLabel, statusLabel } from './format'
 
 type QueryPatch = Partial<DirectoryQuery>
-type Column = 'role' | 'location' | 'status' | 'pay' | 'package'
 type LoadState = { key: string; data: DirectoryResponse | null; error: string | null }
 
-const columnNames: Record<Column, string> = {
-  role: 'Role and department', location: 'Location', status: 'Status',
-  pay: 'Current base pay', package: 'Package state',
-}
-
-function EmployeeName({ employee, onOpen }: { employee: Employee; onOpen?: () => void }) {
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-700" aria-hidden="true">
-        {employee.first_name[0]}{employee.last_name[0]}
-      </span>
-      <div className="min-w-0">
-        {onOpen ? <button className="block max-w-full truncate text-left font-medium text-foreground underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring" onClick={(event) => { event.stopPropagation(); onOpen() }} type="button">
-          {employee.first_name} {employee.last_name}
-        </button> : <span className="block max-w-full truncate font-medium text-foreground">{employee.first_name} {employee.last_name}</span>}
-        <p className="truncate text-xs text-muted-foreground" title={employee.email}>{employee.email}</p>
-      </div>
-    </div>
-  )
-}
-
-function DirectoryRows({ employees, columns, compact, asOf, onOpen }: {
-  employees: Employee[]
-  columns: Record<Column, boolean>
-  compact: boolean
-  asOf: string
-  onOpen: (id: number) => void
-}) {
-  return (
-    <>
-      <div className="space-y-2 md:hidden">
-        {employees.map((employee) => (
-          <div role="button" tabIndex={0} className="block w-full cursor-pointer rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" key={employee.employee_id} onClick={() => onOpen(employee.employee_id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(employee.employee_id) } }} aria-label={`Open ${employee.first_name} ${employee.last_name}'s profile`}>
-            <div className="flex items-start justify-between gap-3">
-              <EmployeeName employee={employee} />
-            </div>
-            <p className="mt-3 text-xs font-medium text-muted-foreground">{employee.employee_code} · {employee.country.name}</p>
-            <p className="mt-1 text-sm">{employee.job_title || 'Role not specified'} · {employee.department.name}</p>
-            <div className="mt-3 flex flex-wrap items-center gap-2"><Badge variant={employee.status === 'ACTIVE' ? 'success' : 'secondary'}>{statusLabel(employee.status)}</Badge><PackageBadge state={employee.package_state} /></div>
-            <p className="mt-3 border-t pt-3 text-sm font-medium tabular-nums">{employee.current_compensation ? formatMoney(employee.current_compensation.base_pay, employee.current_compensation.currency, employee.current_compensation.pay_frequency) : 'No current base pay'}</p>
-          </div>
-        ))}
-      </div>
-      <div className="hidden overflow-hidden rounded-xl border bg-card md:block">
-        <Table aria-label="Employee directory" className="min-w-[920px]">
-          <TableHeader className="bg-muted/70">
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="pl-5">Code</TableHead>
-              <TableHead className="sticky left-0 z-10 bg-muted">Employee</TableHead>
-              {columns.role && <TableHead>Role and department</TableHead>}
-              {columns.location && <TableHead>Location</TableHead>}
-              {columns.status && <TableHead>Status</TableHead>}
-              {columns.pay && <TableHead className="text-right">{asOf ? 'Base pay as of date' : 'Current base pay'}</TableHead>}
-              {columns.package && <TableHead>Package state</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {employees.map((employee) => (
-              <TableRow className={`${compact ? 'h-10' : 'h-14'} cursor-pointer focus-within:bg-muted/40`} key={employee.employee_id} onClick={() => onOpen(employee.employee_id)} title={`Open ${employee.first_name} ${employee.last_name}'s profile`}>
-                <TableCell className="pl-5 text-xs font-medium text-muted-foreground tabular-nums">{employee.employee_code}</TableCell>
-                <TableCell className="sticky left-0 z-10 bg-card"><EmployeeName employee={employee} onOpen={() => onOpen(employee.employee_id)} /></TableCell>
-                {columns.role && <TableCell><span className="block max-w-48 truncate" title={employee.job_title || undefined}>{employee.job_title || 'Not specified'}</span><span className="mt-1 block max-w-48 truncate text-xs text-muted-foreground" title={employee.department.name}>{employee.department.name}</span></TableCell>}
-                {columns.location && <TableCell><span className="block max-w-40 truncate" title={`${employee.location.name}, ${employee.country.name}`}>{employee.location.name}, {employee.country.name}</span></TableCell>}
-                {columns.status && <TableCell><Badge variant={employee.status === 'ACTIVE' ? 'success' : 'secondary'}>{statusLabel(employee.status)}</Badge></TableCell>}
-                {columns.pay && <TableCell className="text-right tabular-nums">{employee.current_compensation ? <span className="font-medium">{formatMoney(employee.current_compensation.base_pay, employee.current_compensation.currency, employee.current_compensation.pay_frequency)}</span> : <span className="text-muted-foreground">Not specified</span>}</TableCell>}
-                {columns.package && <TableCell><PackageBadge state={employee.package_state} />{employee.next_effective_from && <span className="mt-1 block text-xs text-muted-foreground">From {formatDate(employee.next_effective_from)}</span>}</TableCell>}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </>
-  )
+const directoryColumnNames: Record<DirectoryColumn, string> = {
+  role: 'Role and department',
+  location: 'Location',
+  status: 'Status',
+  pay: 'Current base pay',
+  package: 'Package state',
 }
 
 export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
@@ -108,14 +39,16 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
   const [loadState, setLoadState] = useState<LoadState>({ key: '', data: null, error: null })
   const [options, setOptions] = useState<DirectoryOptions | null>(null)
   const [optionsError, setOptionsError] = useState<string | null>(null)
-  const [searchInput, setSearchInput] = useState(query.search)
+  const [searchDraft, setSearchDraft] = useState({ query, value: query.search })
+  const searchInput = searchDraft.query === query ? searchDraft.value : query.search
+  const setSearchInput = (value: string) => setSearchDraft({ query, value })
   const [retry, setRetry] = useState(0)
   const [addOpen, setAddOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [compact, setCompact] = useState(false)
-  const [columns, setColumns] = useState<Record<Column, boolean>>({ role: true, location: true, status: true, pay: true, package: true })
+  const [columns, setColumns] = useState<Record<DirectoryColumn, boolean>>({ role: true, location: true, status: true, pay: true, package: true })
   const requestKey = JSON.stringify([query, retry])
   const loading = loadState.key !== requestKey
   const data = loading ? null : loadState.data
@@ -138,12 +71,6 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
     })
     return () => controller.abort()
   }, [query, requestKey])
-
-  useEffect(() => {
-    const syncSearchFromHistory = () => setSearchInput(new URLSearchParams(window.location.search).get('search') ?? '')
-    window.addEventListener('popstate', syncSearchFromHistory)
-    return () => window.removeEventListener('popstate', syncSearchFromHistory)
-  }, [])
 
   useEffect(() => {
     if (searchInput === query.search) return
@@ -197,17 +124,19 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
   const noEmployees = Boolean(data && data.items.length === 0 && !pageOutOfRange && (!activeFilters.length || !options?.statuses.length))
 
   return (
-    <div className="mx-auto w-full max-w-[1440px] px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><h1 className="text-[28px] leading-9 font-semibold tracking-tight">Employees</h1><ContextInfo label="About directory figures">Compensation uses each employee’s stored currency{query.as_of ? ` as of ${formatDate(query.as_of)} UTC` : ''}. Search and filters are applied by the server.</ContextInfo></div>
-          <p className="mt-1.5 max-w-[65ch] text-[15px] leading-[22px] text-muted-foreground">Find employees and review their compensation and employment details.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <PageContainer>
+      <PageHeader
+        className="mb-6"
+        title="Employees"
+        description="Find employees and review their compensation and employment details."
+        titleAction={<ContextInfo label="About directory figures">Compensation uses each employee’s stored currency{query.as_of ? ` as of ${formatDate(query.as_of)} UTC` : ''}. Search and filters are applied by the server.</ContextInfo>}
+        actions={
+          <>
           <Button variant="outline" loading={exporting} disabled={!data || data.total === 0} onClick={handleExport}><DownloadSimpleIcon aria-hidden="true" />Export directory</Button>
           <Button onClick={() => setAddOpen(true)}><PlusIcon aria-hidden="true" />Add employee</Button>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <div className="mb-5 rounded-xl border bg-card p-3 sm:p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -232,8 +161,8 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
             <Menu>
               <MenuTrigger render={<Button aria-label="Visible columns" title="Visible columns" size="icon-sm" variant="ghost" />}><ColumnsIcon aria-hidden="true" /></MenuTrigger>
               <MenuPopup align="end">
-                {(Object.keys(columnNames) as Column[]).map((column) => (
-                  <MenuCheckboxItem key={column} checked={columns[column]} onCheckedChange={(checked) => setColumns((current) => ({ ...current, [column]: checked }))}>{columnNames[column]}</MenuCheckboxItem>
+                {(Object.keys(directoryColumnNames) as DirectoryColumn[]).map((column) => (
+                  <MenuCheckboxItem key={column} checked={columns[column]} onCheckedChange={(checked) => setColumns((current) => ({ ...current, [column]: checked }))}>{directoryColumnNames[column]}</MenuCheckboxItem>
                 ))}
               </MenuPopup>
             </Menu>
@@ -258,7 +187,7 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
         <div className="rounded-xl border bg-card px-6 py-12 text-center" role="alert"><WarningCircleIcon aria-hidden="true" className="mx-auto text-destructive" size={28} /><h2 className="mt-4 text-lg font-semibold">Couldn’t load employees</h2><p className="mt-2 text-sm text-muted-foreground">{error}</p><Button className="mt-5" variant="outline" onClick={() => setRetry((value) => value + 1)}>Try again</Button></div>
       ) : data && data.items.length === 0 ? (
         <div className="rounded-xl border bg-card"><Empty><EmptyHeader><EmptyMedia variant="icon"><UsersThreeIcon aria-hidden="true" /></EmptyMedia><EmptyTitle>{pageOutOfRange ? 'This page is unavailable' : noEmployees ? 'No employees yet' : 'No employees match these filters'}</EmptyTitle><p className="mt-2 text-sm text-muted-foreground">{pageOutOfRange ? 'The directory has fewer pages now.' : noEmployees ? 'Add an employee after departments and locations are configured.' : 'Try a different search or clear the filters.'}</p></EmptyHeader><div className="flex gap-2">{pageOutOfRange ? <Button variant="outline" onClick={() => changeFilter({ page: 1 })}>Go to first page</Button> : noEmployees ? <Button onClick={() => setAddOpen(true)}>Add employee</Button> : <Button variant="outline" onClick={clearFilters}>Clear filters</Button>}</div></Empty></div>
-      ) : data ? <DirectoryRows employees={data.items} columns={columns} compact={compact} asOf={query.as_of} onOpen={onOpenEmployee} /> : null}
+      ) : data ? <DirectoryResults employees={data.items} columns={columns} compact={compact} asOf={query.as_of} onOpen={onOpenEmployee} /> : null}
 
       {data && data.total > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card px-4 py-3">
@@ -271,6 +200,6 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
         </div>
       )}
       <CreateEmployeeSheet open={addOpen} onOpenChange={setAddOpen} options={options} onCreated={(employee) => { setSearchInput(employee.employee_code); changeFilter({ search: employee.employee_code, status: '', country: '', department: '', role: '', package_state: '' }); setRetry((value) => value + 1) }} />
-    </div>
+    </PageContainer>
   )
 }

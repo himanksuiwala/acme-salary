@@ -1,158 +1,90 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { ArchiveIcon, BuildingsIcon, CaretLeftIcon, CaretRightIcon, ChartBarIcon, ClockCounterClockwiseIcon, CurrencyDollarIcon, ListIcon, SignOutIcon, UsersThreeIcon } from '@phosphor-icons/react'
-import { Button } from '@/components/ui/button'
-import { Sheet, SheetPopup, SheetTitle } from '@/components/ui/sheet'
+import { WorkspaceShell } from '@/components/product/WorkspaceShell'
 import { EmployeeDirectory } from '@/features/employees/EmployeeDirectory'
 import { EmployeeProfile } from '@/features/employees/EmployeeProfile'
 import { CompensationForm } from '@/features/employees/CompensationForm'
 import { AuditTrail } from '@/components/product/AuditTrail'
 import type { AnalyticsQuery, Group } from '@/features/analytics/api'
-import { auditFilterKeys, defaultAuditQuery } from '@/features/audit/api'
+import { defaultAuditQuery } from '@/features/audit/api'
 import type { AuditQuery } from '@/features/audit/api'
 import type { DirectoryQuery } from '@/features/employees/api'
 import { LoginScreen } from '@/features/auth/LoginScreen'
 import { getCurrentUser, type AuthenticatedUser } from '@/features/auth/api'
 import { accessToken, rememberAccessToken } from '@/lib/api'
-import { roleLabel } from '@/features/employees/format'
 import { AdministrationScreen, type AdminSection } from '@/features/admin/AdministrationScreen'
 
 const AnalyticsScreen = lazy(() => import('@/features/analytics/AnalyticsScreen').then((module) => ({ default: module.AnalyticsScreen })))
 
 type LocationState = { query: DirectoryQuery; employeeId: number | null; compensationForm: boolean; audit: boolean; auditQuery: AuditQuery; analytics: boolean; analyticsQuery: AnalyticsQuery; administration: boolean; adminSection: AdminSection }
 
-const analyticsKeys = ['as_of', 'country', 'department', 'role', 'status', 'location_id', 'period_from', 'period_to'] as const
 function todayUtc() { return new Date().toISOString().slice(0, 10) }
-function sectionsLabel(section: AdminSection) {
-  return section === 'allowances' ? 'Compensation setup' : section === 'currencies' ? 'Currencies & FX' : 'Organization'
+
+function defaultDirectoryQuery(): DirectoryQuery {
+  return {
+    search: '',
+    country: '',
+    department: '',
+    role: '',
+    status: 'ACTIVE',
+    package_state: '',
+    as_of: '',
+    location_id: '',
+    employed_as_of: '',
+    page: 1,
+    page_size: 20,
+  }
 }
 
-function readLocation(): LocationState {
-  const params = new URLSearchParams(window.location.search)
-  const page = Number(params.get('page'))
-  const pageSize = Number(params.get('page_size'))
-  const employeeId = Number(params.get('employee'))
-  const auditQuery = { ...defaultAuditQuery }
-  for (const key of auditFilterKeys) auditQuery[key] = params.get(`audit_${key}`) ?? ''
-  const auditPage = Number(params.get('audit_page'))
-  const auditPageSize = Number(params.get('audit_page_size'))
-  auditQuery.page = Number.isInteger(auditPage) && auditPage > 0 ? auditPage : 1
-  auditQuery.page_size = [20,50,100].includes(auditPageSize) ? auditPageSize : 20
-  const analyticsDate = params.get('analytics_as_of') || todayUtc()
-  const analyticsQuery: AnalyticsQuery = {
-    as_of: analyticsDate, country: params.get('analytics_country') ?? '',
-    department: params.get('analytics_department') ?? '', role: params.get('analytics_role') ?? '',
-    status: params.get('analytics_status') ?? '', location_id: params.get('analytics_location_id') ?? '',
-    period_from: params.get('analytics_period_from') || `${analyticsDate.slice(0, 7)}-01`,
-    period_to: params.get('analytics_period_to') || analyticsDate,
-  }
-  const requestedAdminSection = params.get('admin_section')
-  const adminSection: AdminSection = requestedAdminSection === 'allowances' || requestedAdminSection === 'currencies' ? requestedAdminSection : 'organization'
+function defaultAnalyticsQuery(): AnalyticsQuery {
+  const analyticsDate = todayUtc()
   return {
-    audit: params.get('view') === 'audit',
-    analytics: params.get('view') === 'analytics', analyticsQuery,
-    administration: params.get('view') === 'administration', adminSection,
-    auditQuery,
-    query: {
-      search: params.get('search') ?? '',
-      country: params.get('country') ?? '',
-      department: params.get('department') ?? '',
-      role: params.get('role') ?? '',
-      status: params.get('status') === 'all' ? '' : (params.get('status') ?? 'ACTIVE'),
-      package_state: params.get('package_state') ?? '',
-      as_of: params.get('as_of') ?? '',
-      location_id: params.get('location_id') ?? '',
-      employed_as_of: params.get('employed_as_of') ?? '',
-      page: Number.isInteger(page) && page > 0 ? page : 1,
-      page_size: [20, 50, 100].includes(pageSize) ? pageSize : 20,
-    },
-    employeeId: Number.isInteger(employeeId) && employeeId > 0 ? employeeId : null,
-    compensationForm: Number.isInteger(employeeId) && employeeId > 0 && params.get('view') === 'new-package',
+    as_of: analyticsDate,
+    country: '',
+    department: '',
+    role: '',
+    status: '',
+    location_id: '',
+    period_from: `${analyticsDate.slice(0, 7)}-01`,
+    period_to: analyticsDate,
   }
+}
+
+function cleanAdminSection(value: string | undefined): AdminSection {
+  return value === 'allowances' || value === 'currencies' ? value : 'organization'
+}
+
+function readLocation(pathname = window.location.pathname): LocationState {
+  const segments = pathname.split('/').filter(Boolean)
+  const employeeId = segments[0] === 'employees' && segments[1] === 'detail' ? Number(segments[2]) : NaN
+  const validEmployeeId = Number.isInteger(employeeId) && employeeId > 0
+  const compensationForm = validEmployeeId && segments[3] === 'compensation' && segments[4] === 'new'
+  const analyticsQuery: AnalyticsQuery = {
+    ...defaultAnalyticsQuery(),
+  }
+  return {
+    audit: segments[0] === 'audit',
+    analytics: segments[0] === 'analytics',
+    analyticsQuery,
+    administration: segments[0] === 'administration',
+    adminSection: cleanAdminSection(segments[1]),
+    auditQuery: { ...defaultAuditQuery },
+    query: defaultDirectoryQuery(),
+    employeeId: validEmployeeId ? employeeId : null,
+    compensationForm,
+  }
+}
+
+function routePath(state: LocationState): string {
+  if (state.audit) return '/audit'
+  if (state.analytics) return '/analytics'
+  if (state.administration) return `/administration/${state.adminSection}`
+  if (state.employeeId) return `/employees/detail/${state.employeeId}${state.compensationForm ? '/compensation/new' : ''}`
+  return '/employees'
 }
 
 function writeLocation(state: LocationState, replace = false) {
-  const params = new URLSearchParams()
-  const { query, employeeId, compensationForm, audit, auditQuery, analytics, analyticsQuery, administration, adminSection } = state
-  for (const key of ['search', 'country', 'department', 'role', 'package_state', 'as_of', 'location_id', 'employed_as_of'] as const) {
-    if (query[key]) params.set(key, query[key])
-  }
-  if (query.status !== 'ACTIVE') params.set('status', query.status || 'all')
-  if (query.page > 1) params.set('page', String(query.page))
-  if (query.page_size !== 20) params.set('page_size', String(query.page_size))
-  if (employeeId) params.set('employee', String(employeeId))
-  if (employeeId && compensationForm) params.set('view', 'new-package')
-  if (audit) params.set('view', 'audit')
-  if (analytics) params.set('view', 'analytics')
-  if (administration) { params.set('view', 'administration'); params.set('admin_section', adminSection) }
-  for (const key of auditFilterKeys) if (auditQuery[key]) params.set(`audit_${key}`, auditQuery[key])
-  if (auditQuery.page > 1) params.set('audit_page', String(auditQuery.page))
-  if (auditQuery.page_size !== 20) params.set('audit_page_size', String(auditQuery.page_size))
-  if (analytics) for (const key of analyticsKeys) if (analyticsQuery[key]) params.set(`analytics_${key}`, analyticsQuery[key])
-  const url = `${window.location.pathname}${params.size ? `?${params}` : ''}`
+  const url = routePath(state)
   window.history[replace ? 'replaceState' : 'pushState'](null, '', url)
-}
-
-function Brand({ collapsed = false, onToggle }: { collapsed?: boolean; onToggle?: () => void }) {
-  return (
-    <div className={`flex items-center py-5 ${collapsed ? 'flex-col justify-center gap-2 px-2' : 'gap-3 px-5'}`}>
-      <div aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-sm font-semibold text-white">A</div>
-      <div className={collapsed ? 'sr-only' : 'min-w-0 flex-1 leading-tight'}>
-        <p className="text-sm font-semibold tracking-tight">ACME</p>
-        <p className="text-[11px] text-muted-foreground">Salary management</p>
-      </div>
-      {onToggle && <Button type="button" size="icon-sm" variant="ghost" className="shrink-0" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={onToggle}>
-        {collapsed ? <CaretRightIcon aria-hidden="true" size={17} /> : <CaretLeftIcon aria-hidden="true" size={17} />}
-      </Button>}
-    </div>
-  )
-}
-
-function UserCard({ user, onLogout, collapsed = false }: { user: AuthenticatedUser; onLogout: () => void; collapsed?: boolean }) {
-  const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email
-  const initials = [user.first_name, user.last_name].filter(Boolean).map((part) => part![0]).join('').toUpperCase() || name.slice(0, 2).toUpperCase()
-  if (collapsed) return <div className="mx-2 mb-3 flex flex-col items-center gap-2 border-t pt-3">
-    <div aria-hidden="true" className="flex size-9 items-center justify-center rounded-full bg-neutral-900 text-xs font-semibold text-white" title={name}>{initials}</div>
-    <Button type="button" size="icon-sm" variant="ghost" onClick={onLogout} aria-label="Log out" title="Log out"><SignOutIcon aria-hidden="true" size={17} /></Button>
-  </div>
-  return <div className="mx-3 mb-3 rounded-xl border bg-neutral-50 p-3">
-    <div className="flex min-w-0 items-start gap-2.5">
-      <div aria-hidden="true" className="flex size-9 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-semibold text-white">{initials}</div>
-      <div className="min-w-0"><p className="truncate text-sm font-semibold" title={name}>{name}</p><p className="truncate text-xs text-muted-foreground" title={user.email}>{user.email}</p><p className="mt-1 text-[11px] font-medium text-muted-foreground">{roleLabel(user.role)}</p></div>
-    </div>
-    <button type="button" onClick={onLogout} className="mt-3 flex w-full items-center gap-2 rounded-md border-t pt-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><SignOutIcon aria-hidden="true" size={15} />Log out</button>
-  </div>
-}
-
-function NavContents({ onEmployees, onAnalytics, onAudit, onAdministration, audit, analytics, administration, adminSection, user, onLogout, collapsed = false, onToggle }: { onEmployees: () => void; onAnalytics: () => void; onAudit: () => void; onAdministration: (section: AdminSection) => void; audit: boolean; analytics: boolean; administration: boolean; adminSection: AdminSection; user: AuthenticatedUser; onLogout: () => void; collapsed?: boolean; onToggle?: () => void }) {
-  const navClass = (selected: boolean) => `flex w-full items-center rounded-lg py-2.5 text-sm font-medium hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${collapsed ? 'justify-center px-2' : 'gap-3 px-3 text-left'} ${selected ? 'bg-neutral-100 text-foreground' : 'text-muted-foreground'}`
-  return (
-    <>
-      <Brand collapsed={collapsed} onToggle={onToggle} />
-      <nav aria-label="Main navigation" className={`flex-1 pt-5 ${collapsed ? 'px-2' : 'px-3'}`}>
-        <p className={collapsed ? 'sr-only' : 'px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground'}>Workspace</p>
-        <button type="button" title={collapsed ? 'Employees' : undefined} aria-current={!audit && !analytics && !administration ? 'page' : undefined} onClick={onEmployees} className={navClass(!audit && !analytics && !administration)}>
-          <UsersThreeIcon size={19} weight="fill" aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Employees</span>
-        </button>
-        <button type="button" title={collapsed ? 'Analytics' : undefined} aria-current={analytics ? 'page' : undefined} onClick={onAnalytics} className={navClass(analytics)}>
-          <ChartBarIcon size={19} weight={analytics ? 'fill' : 'regular'} aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Analytics</span>
-        </button>
-        <p className={collapsed ? 'sr-only' : 'px-3 pb-2 pt-7 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground'}>Administration</p>
-        <button type="button" title={collapsed ? 'Audit log' : undefined} aria-current={audit ? 'page' : undefined} onClick={onAudit} className={`${navClass(audit)} ${collapsed ? 'mt-7' : ''}`}>
-          <ClockCounterClockwiseIcon size={19} weight={audit ? 'fill' : 'regular'} aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Audit log</span>
-        </button>
-        <button type="button" title={collapsed ? 'Organization' : undefined} aria-current={administration && adminSection === 'organization' ? 'page' : undefined} onClick={() => onAdministration('organization')} className={navClass(administration && adminSection === 'organization')}>
-          <BuildingsIcon size={19} weight={administration && adminSection === 'organization' ? 'fill' : 'regular'} aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Organization</span>
-        </button>
-        <button type="button" title={collapsed ? 'Compensation setup' : undefined} aria-current={administration && adminSection === 'allowances' ? 'page' : undefined} onClick={() => onAdministration('allowances')} className={navClass(administration && adminSection === 'allowances')}>
-          <ArchiveIcon size={19} weight={administration && adminSection === 'allowances' ? 'fill' : 'regular'} aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Compensation setup</span>
-        </button>
-        <button type="button" title={collapsed ? 'Currencies & FX' : undefined} aria-current={administration && adminSection === 'currencies' ? 'page' : undefined} onClick={() => onAdministration('currencies')} className={navClass(administration && adminSection === 'currencies')}>
-          <CurrencyDollarIcon size={19} weight={administration && adminSection === 'currencies' ? 'fill' : 'regular'} aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Currencies & FX</span>
-        </button>
-      </nav>
-      <UserCard user={user} onLogout={onLogout} collapsed={collapsed} />
-    </>
-  )
 }
 
 function App() {
@@ -160,6 +92,7 @@ function App() {
   const [restoringUser, setRestoringUser] = useState(() => accessToken() !== null)
   const [location, setLocation] = useState<LocationState>(readLocation)
   const locationRef = useRef(location)
+  const intendedPathRef = useRef(window.location.pathname === '/' || window.location.pathname === '/login' ? '/employees' : window.location.pathname)
   const [navOpen, setNavOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem('sidebar-collapsed') === 'true')
   const navTrigger = useRef<HTMLButtonElement>(null)
@@ -168,21 +101,47 @@ function App() {
 
   useEffect(() => {
     if (accessToken() === null) return
-    getCurrentUser().then(setUser).catch(() => rememberAccessToken(null)).finally(() => setRestoringUser(false))
+    getCurrentUser().then((selected) => {
+      setUser(selected)
+      if (window.location.pathname === '/' || window.location.pathname === '/login') {
+        const next = readLocation(intendedPathRef.current)
+        locationRef.current = next
+        setLocation(next)
+        writeLocation(next, true)
+      }
+    }).catch(() => rememberAccessToken(null)).finally(() => setRestoringUser(false))
   }, [])
 
   useEffect(() => {
-    const expired = () => { setUser(null); setNavOpen(false); setRestoringUser(false) }
+    const expired = () => {
+      intendedPathRef.current = window.location.pathname === '/login' ? '/employees' : window.location.pathname
+      window.history.replaceState(null, '', '/login')
+      setUser(null)
+      setNavOpen(false)
+      setRestoringUser(false)
+    }
     window.addEventListener('auth:expired', expired)
     return () => window.removeEventListener('auth:expired', expired)
   }, [])
 
+  useEffect(() => {
+    if (restoringUser || user || window.location.pathname === '/login') return
+    intendedPathRef.current = window.location.pathname === '/' ? '/employees' : window.location.pathname
+    window.history.replaceState(null, '', '/login')
+  }, [restoringUser, user])
+
   function onLogin(selected: AuthenticatedUser) {
+    const next = readLocation(intendedPathRef.current)
+    locationRef.current = next
+    setLocation(next)
+    writeLocation(next, true)
     setUser(selected)
   }
 
   function onLogout() {
+    intendedPathRef.current = '/employees'
     rememberAccessToken(null)
+    window.history.replaceState(null, '', '/login')
     setUser(null)
     setNavOpen(false)
   }
@@ -218,7 +177,6 @@ function App() {
     }
     locationRef.current = next
     setLocation(next)
-    writeLocation(next)
   }, [])
 
   const openEmployee = useCallback((employeeId: number) => {
@@ -262,7 +220,7 @@ function App() {
   const updateAuditQuery = useCallback((patch: Partial<AuditQuery>) => {
     const previous = locationRef.current
     const next = { ...previous, auditQuery: { ...previous.auditQuery, ...patch, page: patch.page ?? 1 } }
-    locationRef.current = next; setLocation(next); writeLocation(next)
+    locationRef.current = next; setLocation(next)
   }, [])
 
   const openAnalytics = useCallback(() => {
@@ -275,7 +233,7 @@ function App() {
   const updateAnalyticsQuery = useCallback((patch: Partial<AnalyticsQuery>) => {
     const previous = locationRef.current
     const next = { ...previous, analyticsQuery: { ...previous.analyticsQuery, ...patch } }
-    locationRef.current = next; setLocation(next); writeLocation(next)
+    locationRef.current = next; setLocation(next)
   }, [])
 
   const analyticsDrilldown = useCallback((kind?: 'country' | 'department' | 'role', group?: Group) => {
@@ -324,39 +282,26 @@ function App() {
   if (!user) return <LoginScreen onLogin={onLogin} />
 
   return (
-    <div className="min-h-svh bg-neutral-50 text-foreground">
-      <aside className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r bg-white transition-[width] duration-200 lg:flex ${sidebarCollapsed ? 'w-[76px]' : 'w-[232px]'}`}><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} onAdministration={openAdministration} audit={location.audit} analytics={location.analytics} administration={location.administration} adminSection={location.adminSection} user={user} onLogout={onLogout} collapsed={sidebarCollapsed} onToggle={toggleSidebar} /></aside>
-      <div className={`transition-[padding] duration-200 ${sidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[232px]'}`}>
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <Button ref={navTrigger} className="lg:hidden" aria-label="Open navigation" size="icon-sm" variant="ghost" onClick={() => setNavOpen(true)}><ListIcon aria-hidden="true" size={20} /></Button>
-            <nav aria-label="Breadcrumb" className="min-w-0 text-sm">
-              <ol className="flex min-w-0 items-center gap-2 whitespace-nowrap">
-                <li><button type="button" className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" onClick={openDirectory}>Workspace</button></li>
-                <li aria-hidden="true"><CaretRightIcon size={14} className="text-muted-foreground" /></li>
-                {location.audit || location.analytics || location.administration ? <li className="truncate font-medium" aria-current="page">{location.audit ? 'Audit log' : location.analytics ? 'Analytics' : sectionsLabel(location.adminSection)}</li> : <>
-                  <li>{location.employeeId ? <button type="button" className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" onClick={openDirectory}>Employees</button> : <span aria-current="page" className="font-medium">Employees</span>}</li>
-                  {location.employeeId && <><li aria-hidden="true"><CaretRightIcon size={14} className="text-muted-foreground" /></li><li>{location.compensationForm ? <button type="button" className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" onClick={openProfileFromBreadcrumb}>Employee profile</button> : <span aria-current="page" className="font-medium">Employee profile</span>}</li></>}
-                  {location.compensationForm && <><li aria-hidden="true"><CaretRightIcon size={14} className="text-muted-foreground" /></li><li className="truncate font-medium" aria-current="page">New package</li></>}
-                </>}
-              </ol>
-            </nav>
-          </div>
-        </header>
-        <main>
-          {location.audit ? <AuditTrail query={location.auditQuery} onQueryChange={updateAuditQuery} onOpenEmployee={openEmployee} /> : location.analytics ? <Suspense fallback={<p className="px-4 py-8 text-sm text-muted-foreground" role="status">Loading analytics…</p>}><AnalyticsScreen query={location.analyticsQuery} onQueryChange={updateAnalyticsQuery} onViewEmployees={analyticsDrilldown} /></Suspense> : location.administration ? <AdministrationScreen section={location.adminSection} /> : location.employeeId ? location.compensationForm
-            ? <CompensationForm key={location.employeeId} employeeId={location.employeeId} onCancel={closeCompensationForm} onSaved={completeCompensationForm} onDirtyChange={setFormDirty} />
-            : <EmployeeProfile key={location.employeeId} employeeId={location.employeeId} savedPackageId={savedPackageId} onRecordCompensation={openCompensationForm} onFullAuditLog={openEmployeeAudit} onBack={openDirectory} onOpenEmployee={openEmployee} />
-            : <EmployeeDirectory query={location.query} updateQuery={updateQuery} onOpenEmployee={openEmployee} />}
-        </main>
-      </div>
-      <Sheet open={navOpen} onOpenChange={setNavOpen}>
-        <SheetPopup finalFocus={navTrigger} side="left" aria-label="Navigation" className="max-w-[280px]">
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <div className="flex min-h-full flex-col"><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} onAdministration={openAdministration} audit={location.audit} analytics={location.analytics} administration={location.administration} adminSection={location.adminSection} user={user} onLogout={onLogout} /></div>
-        </SheetPopup>
-      </Sheet>
-    </div>
+    <WorkspaceShell
+      user={user}
+      nav={location}
+      sidebarCollapsed={sidebarCollapsed}
+      navOpen={navOpen}
+      navTrigger={navTrigger}
+      onToggleSidebar={toggleSidebar}
+      onNavOpenChange={setNavOpen}
+      onEmployees={openDirectory}
+      onAnalytics={openAnalytics}
+      onAudit={openAudit}
+      onAdministration={openAdministration}
+      onLogout={onLogout}
+      onProfileBreadcrumb={openProfileFromBreadcrumb}
+    >
+      {location.audit ? <AuditTrail query={location.auditQuery} onQueryChange={updateAuditQuery} onOpenEmployee={openEmployee} /> : location.analytics ? <Suspense fallback={<p className="px-4 py-8 text-sm text-muted-foreground" role="status">Loading analytics…</p>}><AnalyticsScreen query={location.analyticsQuery} onQueryChange={updateAnalyticsQuery} onViewEmployees={analyticsDrilldown} /></Suspense> : location.administration ? <AdministrationScreen section={location.adminSection} /> : location.employeeId ? location.compensationForm
+        ? <CompensationForm key={location.employeeId} employeeId={location.employeeId} onCancel={closeCompensationForm} onSaved={completeCompensationForm} onDirtyChange={setFormDirty} />
+        : <EmployeeProfile key={location.employeeId} employeeId={location.employeeId} savedPackageId={savedPackageId} onRecordCompensation={openCompensationForm} onFullAuditLog={openEmployeeAudit} onBack={openDirectory} onOpenEmployee={openEmployee} />
+        : <EmployeeDirectory query={location.query} updateQuery={updateQuery} onOpenEmployee={openEmployee} />}
+    </WorkspaceShell>
   )
 }
 

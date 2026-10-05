@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { MagnifyingGlassIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react'
+import { PageContainer, PageHeader } from '@/components/product/PageLayout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -92,11 +93,12 @@ export function AdministrationScreen({ section }: { section: AdminSection }) {
     } finally { setSaving(false) }
   }
 
-  return <div className="mx-auto w-full max-w-[1440px] px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{sectionDetails.label}</h1><p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">{sectionDetails.description}</p></div>
-      {section === 'allowances' && <Button onClick={() => openEditor({ kind: 'create' })}><PlusIcon aria-hidden="true" />Add allowance type</Button>}
-    </div>
+  return <PageContainer>
+    <PageHeader
+      title={sectionDetails.label}
+      description={sectionDetails.description}
+      actions={section === 'allowances' ? <Button onClick={() => openEditor({ kind: 'create' })}><PlusIcon aria-hidden="true" />Add allowance type</Button> : null}
+    />
 
     <section className="mt-7" aria-label={sectionDetails.label}>
         <div className="mb-5 flex justify-end"><div className="relative w-full sm:w-72"><MagnifyingGlassIcon aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-muted-foreground" size={16} /><Input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this section" aria-label="Search records" className="pl-8" /></div></div>
@@ -104,7 +106,7 @@ export function AdministrationScreen({ section }: { section: AdminSection }) {
     </section>
 
     <Sheet open={editor !== null} onOpenChange={(open) => { if (!open && !saving) setEditor(null) }}><SheetPopup aria-label="Allowance type editor"><form onSubmit={submit} className="flex min-h-0 flex-1 flex-col"><SheetHeader><SheetTitle>{editor?.kind === 'create' ? 'Add allowance type' : editor?.kind === 'edit' ? 'Edit allowance type' : editor?.allowance.status === 'ACTIVE' ? 'Archive allowance type' : 'Reactivate allowance type'}</SheetTitle><SheetDescription>{editor?.kind === 'lifecycle' ? 'Explain why this allowance availability is changing.' : 'Codes remain stable after an allowance type is created.'}</SheetDescription></SheetHeader><SheetPanel className="space-y-5">{formError && <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive-foreground">{formError}</p>}{editor?.kind === 'lifecycle' ? <><div className="rounded-lg border bg-muted/50 p-3 text-sm"><span className="font-medium">{editor.allowance.name}</span><span className="ml-2 font-mono text-xs text-muted-foreground">{editor.allowance.code}</span></div><Field><FieldLabel htmlFor="allowance-reason">Reason</FieldLabel><textarea id="allowance-reason" value={reason} onChange={(event) => setReason(event.target.value)} rows={4} maxLength={500} className="w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" required /><FieldDescription>This reason appears in the audit log.</FieldDescription></Field></> : <><Field><FieldLabel htmlFor="allowance-code">Code</FieldLabel><Input id="allowance-code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} maxLength={40} disabled={editor?.kind === 'edit'} required /><FieldDescription>Letters, numbers, underscores, and hyphens. The code cannot change later.</FieldDescription></Field><Field><FieldLabel htmlFor="allowance-name">Name</FieldLabel><Input id="allowance-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={100} required /></Field><Field><FieldLabel htmlFor="allowance-description">Description</FieldLabel><textarea id="allowance-description" value={description} onChange={(event) => setDescription(event.target.value)} rows={4} maxLength={500} className="w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" /></Field></>}</SheetPanel><SheetFooter><Button type="button" variant="outline" disabled={saving} onClick={() => setEditor(null)}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? 'Saving…' : editor?.kind === 'lifecycle' ? editor.allowance.status === 'ACTIVE' ? 'Archive' : 'Reactivate' : 'Save allowance type'}</Button></SheetFooter></form></SheetPopup></Sheet>
-  </div>
+  </PageContainer>
 }
 
 function ReadOnlyTable({ title, heads, rows }: { title: string; heads: string[]; rows: (string | number)[][] }) {
