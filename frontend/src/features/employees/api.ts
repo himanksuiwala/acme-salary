@@ -68,6 +68,9 @@ export type DirectoryQuery = {
   role: string
   status: string
   package_state: string
+  as_of: string
+  location_id: string
+  employed_as_of: string
   page: number
   page_size: number
 }
@@ -129,7 +132,7 @@ export type EmployeeEdit = Pick<EmployeeSummary, 'first_name' | 'last_name' | 'e
 
 export function queryParams(query: DirectoryQuery, includePage = true): URLSearchParams {
   const params = new URLSearchParams()
-  for (const key of ['search', 'country', 'department', 'role', 'status', 'package_state'] as const) {
+  for (const key of ['search', 'country', 'department', 'role', 'status', 'package_state', 'as_of', 'location_id', 'employed_as_of'] as const) {
     if (query[key]) params.set(key, query[key])
   }
   if (includePage) {

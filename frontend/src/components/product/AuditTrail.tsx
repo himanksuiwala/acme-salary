@@ -5,6 +5,7 @@ import {
   WarningCircleIcon, XIcon,
 } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
+import { DateRangePicker } from '@/components/product/DateRangePicker'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
@@ -173,11 +174,7 @@ export function AuditTrail({ employeeId, query: controlledQuery, onQueryChange, 
             <FilterSelect label="Actors" value={query.actor_id} options={(options?.actors ?? []).map((actor) => ({ value: String(actor.id), label: actor.name }))} onChange={(actor_id) => updateQuery({ actor_id })} />
             <FilterSelect label="Target types" value={query.entity_type} options={(options?.entity_types ?? []).map((value) => ({ value, label: statusLabel(value) }))} onChange={(entity_type) => updateQuery({ entity_type })} />
             <FilterSelect label="Outcomes" value={query.outcome} options={[{ value: 'SUCCESS', label: 'Successful' }, { value: 'FAILED', label: 'Failed' }]} onChange={(outcome) => updateQuery({ outcome })} />
-            {(['from_date', 'to_date'] as const).map((key) => <div key={key}>
-              <label htmlFor={`${instanceId}-${key}`} className="mb-1.5 block text-[13px] font-medium">{key === 'from_date' ? 'From date' : 'To date'}</label>
-              <Input id={`${instanceId}-${key}`} nativeInput type="date" className="min-h-11 min-w-0 sm:min-h-9" value={query[key]} aria-invalid={Boolean(dateError)} aria-describedby={dateError ? `${instanceId}-dates-error` : undefined} onChange={(event) => updateQuery({ [key]: event.target.value })} />
-              {!query[key] && <p className="mt-1 text-[13px] text-muted-foreground">No date limit</p>}
-            </div>)}
+            <div className="min-w-0"><span className="mb-1.5 block text-[13px] font-medium">Date range</span><DateRangePicker label="Audit date range (UTC)" value={{ from: query.from_date, to: query.to_date }} onChange={({ from, to }) => updateQuery({ from_date: from, to_date: to })} invalid={Boolean(dateError)} /></div>
           </div>
           {dateError && <p role="alert" id={`${instanceId}-dates-error`} className="text-sm text-destructive-foreground">{dateError}</p>}
           {hasFilters && <div className="flex flex-wrap items-center gap-2" aria-label="Active audit filters">
@@ -210,7 +207,7 @@ export function AuditTrail({ employeeId, query: controlledQuery, onQueryChange, 
                     <TableCell className="pl-5 text-[13px] leading-5 tabular-nums"><time>{auditTimestamp(event.timestamp)}</time><p className="text-muted-foreground">#{event.id}</p></TableCell>
                     <TableCell><EventBadge event={event} />{event.outcome === 'FAILED' && <p className="mt-1 text-[13px] text-destructive-foreground">Failed</p>}</TableCell>
                     <TableCell className="sticky left-0 z-10 max-w-52 whitespace-normal bg-card leading-5"><Target event={event} onOpenEmployee={onOpenEmployee} /></TableCell>
-                    <TableCell className="max-w-48 whitespace-normal break-words leading-5">{event.actor.name}<p className="mt-1 text-[13px] text-muted-foreground">{event.actor.role === 'SYSTEM' ? 'System process' : event.actor.name === 'Admin@acme.org' ? 'Local workspace actor' : event.actor.role ? statusLabel(event.actor.role) : 'Role not recorded'}</p></TableCell>
+                    <TableCell className="max-w-48 whitespace-normal break-words leading-5">{event.actor.name}</TableCell>
                     <TableCell className="max-w-60 whitespace-normal leading-5 text-muted-foreground">{eventSummary(event)}</TableCell>
                     <TableCell className="pr-5 text-right"><Button variant="ghost" size="sm" aria-expanded={expanded === event.id} aria-controls={expanded === event.id ? `${instanceId}-desktop-${event.id}` : undefined} onClick={() => toggle(event.id)} aria-label={`${expanded === event.id ? 'Hide' : 'View'} details for event ${event.id}`}>{expanded === event.id ? 'Hide' : 'View'}<CaretDownIcon aria-hidden="true" className={expanded === event.id ? 'rotate-180' : ''} size={14} /></Button></TableCell>
                   </TableRow>
@@ -242,7 +239,7 @@ export function AuditTrail({ employeeId, query: controlledQuery, onQueryChange, 
           </div>
         </footer>}
       </div>
-      <p className="text-[13px] leading-5 text-muted-foreground">{employeeId ? 'Audit activity is independent of the compensation as-of date.' : 'Summary counts follow the current filters. Export operations are counted once; their employee entries remain visible below.'} Local product actions use the fixed Admin identity; automated technical actions use SYSTEM.</p>
+      <p className="text-[13px] leading-5 text-muted-foreground">{employeeId ? 'Audit activity is independent of the compensation as-of date.' : 'Summary counts follow the current filters. Export operations are counted once; their employee entries remain visible below.'}</p>
     </section>
   )
 }

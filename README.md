@@ -1,6 +1,6 @@
 # Employee Salary Management
 
-This starter connects a FastAPI backend, a SQLite database, and a Vite React/TypeScript frontend. The [requirements](artifacts/requirements.md) and [database design](artifacts/db-schema-design.md) describe the planned salary-management features. The app includes a live employee directory, employee creation, CSV directory export, and compensation detail. The backend also supports versioned compensation updates through its API.
+This starter connects a FastAPI backend, a SQLite database, and a Vite React/TypeScript frontend. The [requirements](artifacts/requirements.md) and [database design](artifacts/db-schema-design.md) describe the planned salary-management features. The app includes a live employee directory, employee creation and editing, CSV exports, an as-of compensation profile, and a reviewed versioned-compensation form.
 
 The [product UX specification](specs/product-ux-spec.md) describes the target screens, access model, salary and analytics rules, and end-to-end HR workflows. It also identifies which experiences are not yet implemented.
 
@@ -58,11 +58,13 @@ Run the database checks with `backend/.venv/bin/python -m unittest discover -s b
 The API exposes:
 
 - `GET /api/employees` with optional `search`, `country`, `department`, `role`, `status`, `package_state`, `page`, and `page_size` query parameters. Search matches partial names and employee codes without case sensitivity. Country and department use codes; `role` means employee job title. Filters combine with AND. Results are ordered by employee code, with 20 items per page by default and a maximum of 100. Each row includes the current base pay, currency, pay frequency, package state, and next effective date when available. Package states are `CURRENT`, `SCHEDULED_CHANGE`, `SCHEDULED`, `PAST_ONLY`, and `NO_PACKAGE`.
-- `GET /api/employees/directory-options` for country, department, location, role, status, and package-state filter and form options.
+- `GET /api/employees/directory-options` for country, department, location, role, status, package-state, currency, and allowance-type options. Countries include their default currency code.
 - `POST /api/employees` to create a basic employee record. Required fields are code, first and last name, email, department code, location ID, and joining date. The response wraps the created employee summary in `employee`; duplicate codes or emails return 409, while invalid references or payloads return 422. Creation and its audit record commit together.
 - `GET /api/employees/export` accepts the directory filters and returns a CSV of **all matching rows**, not only the displayed page. Current base pay is exported as integer minor units. Text cells are protected against spreadsheet formula execution, and the export writes an audit event.
-- `GET /api/employees/{employee_id}/compensation` with the employee summary, package effective today (UTC), past packages, scheduled packages, and each package's allowances.
-- `POST /api/employees/{employee_id}/compensation` to create a complete new package with `base_pay`, optional `variable_pay`, `currency_code`, `pay_frequency`, `effective_from`, `reason`, and the full desired `allowances` list. Amounts are integer minor units. Old pay and allowances remain in history; the prior period is closed if necessary. The write and audit event commit together.
+- `PATCH /api/employees/{employee_id}` updates supported identity and organization fields and writes an audit event.
+- `GET /api/employees/{employee_id}/compensation` accepts optional `as_of=YYYY-MM-DD` (default: today UTC). It returns the employee summary, package effective on that date, past and scheduled packages with allowances, and recent activity.
+- `GET /api/employees/{employee_id}/compensation/export` accepts optional `as_of` and returns all package versions and allowances as CSV with an audit event. Amounts are integer minor units.
+- `POST /api/employees/{employee_id}/compensation` to create a complete new package with `base_pay`, optional `variable_pay`, `currency_code`, `pay_frequency`, `effective_from`, `reason`, and the full desired `allowances` list. It also accepts optional `change_trigger` (`ANNUAL_MERIT`, `PROMOTION`, `MARKET`, `RETENTION`, `RELOCATION`, or `OTHER`) and `authorization_reference` (at most 120 characters), stored in the audit event and returned with the package. The reference is informational; the API does not verify approval or documents. Amounts are integer minor units. Old pay and allowances remain in history; the prior period is closed if necessary. The write and audit event commit together.
 
 See the [API contract](specs/001-employee-compensation-api/contracts/employee-compensation-api.md) for request and response shapes and error codes. A quick read example:
 
@@ -72,6 +74,40 @@ curl 'http://127.0.0.1:8000/api/employees/1/compensation'
 ```
 
 **Local development only:** These salary endpoints, including export, have no authentication or authorization. Successful changes and exports are temporarily attributed to the seeded `Admin@acme.org` user for auditing; this does not identify the actual caller. The intended human access role is `NORMAL_USER` for HR platform users; `SYSTEM` is reserved for automated configuration work. Add real authentication, role and country-scope enforcement, and caller-specific audit attribution before exposing this API beyond a local development environment.
+
+The profile shows stored employee, package, and audit facts. Payroll entity, cost center, grade, approval workflow, and historical organization snapshots from the design handoff have no corresponding records or contract yet. The profile therefore omits them. Edit details currently covers identity, employment type, department, location, status, and termination date; manager assignment and formal status-transition rules require separate backend work.
+
+## Audit trail
+
+The **Audit log** navigation opens the global trail with filters, pagination, readable
+before/after comparisons and CSV reports. Employee profiles show a compact **Audit &
+Change Log** card with the four newest events, separate from compensation history and
+the as-of date. **Full audit log** opens the Audit tab filtered by the exact employee ID.
+The scope remains in the URL and applies to reports; remove its filter to see all employees.
+
+- `GET /api/audit/events`: search employee name/code, actor, event ID or operation reference;
+  filter `action`, `actor_id`, `entity_type`, `outcome`, `employee_id`, `from_date`, `to_date`.
+  Dates use `YYYY-MM-DD` and inclusive UTC days. Pagination defaults to 20, maximum 100.
+- `GET /api/audit/options`: recorded actions/target types and real application actors.
+- `GET /api/employees/{employee_id}/audit`: the employee-scoped equivalent.
+- `GET /api/audit/events/export`: all matching events as a formula-safe CSV snapshot.
+
+Schema version 4 preserves legacy events and adds employee association, outcome,
+operation reference, reason, actor snapshot and context. Successful employee and
+compensation audit writes commit with their business changes. Sensitive failures record
+safe explanations without submitted values. Events are retained indefinitely and guarded
+against normal updates/deletes; this is not a cryptographic ledger.
+
+Directory, compensation and audit-report exports record requested and completed stages,
+with operation summaries and affected-employee entries. Completion means the server
+finished sending the response; it does not prove a file was saved or opened. Audit reports
+exclude their own export events from the snapshot. Counts deduplicate export operations.
+
+Authentication remains deferred: the fixed local `Admin@acme.org` is not an authenticated
+individual. Trusted technical processes can call the central writer with `actor_name="SYSTEM"`.
+Future imports, account changes and configuration workflows must use this writer; those
+mutation APIs and real authorization/country scopes are not implemented in this feature.
+See [the audit specification and contract](specs/002-audit-trail/spec.md).
 
 ## Spec-driven workflow
 

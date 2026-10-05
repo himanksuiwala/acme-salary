@@ -8,10 +8,10 @@ import {
   PlusIcon,
 } from "@phosphor-icons/react";
 import { Badge } from "@/components/ui/badge";
+import { DatePicker } from "@/components/product/DatePicker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { CompensationPackage, EmployeeDetail } from "./api";
@@ -326,15 +326,14 @@ export function EmployeeProfile({
                 <CalendarBlankIcon aria-hidden="true" size={16} />
                 Compensation as of (UTC)
               </label>
-              <Input
+              <DatePicker
                 id="profile-as-of"
-                nativeInput
-                type="date"
+                label="Compensation as of (UTC)"
                 value={asOf}
-                onChange={(event) => {
-                  if (event.target.value) {
+                onChange={(value) => {
+                  if (value) {
                     setLoading(true);
-                    setAsOf(event.target.value);
+                    setAsOf(value);
                   }
                 }}
                 className="w-48"

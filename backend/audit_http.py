@@ -22,7 +22,7 @@ def sensitive_operation(method: str, path: str):
             return 'EXPORT_FAILED', 'employee', employee_id
     if method == 'POST' and path == '/api/employees':
         return 'EMPLOYEE_CREATED', 'employee', None
-    if method == 'GET' and path in ('/api/employees/export', '/api/audit/events/export'):
+    if method == 'GET' and path in ('/api/employees/export', '/api/audit/events/export', '/api/analytics/compensation/export'):
         return 'EXPORT_FAILED', 'export', None
     return None
 

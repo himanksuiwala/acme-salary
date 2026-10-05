@@ -7,6 +7,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from backend.fx_reference import seed_usd_reference_rates
+
 
 BASE_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = BASE_DIR / "schema.sql"
@@ -14,6 +16,7 @@ load_dotenv(BASE_DIR / ".env")
 
 TABLE_PRIMARY_KEYS = {
     "currency": "currency_id",
+    "fx_rate": "id",
     "country": "country_id",
     "location": "location_id",
     "department": "department_id",
@@ -134,7 +137,7 @@ def _migrate_audit(connection: sqlite3.Connection) -> None:
         connection.execute(f"""CREATE TRIGGER IF NOT EXISTS audit_log_no_{operation.lower()}
             BEFORE {operation} ON audit_log BEGIN
             SELECT RAISE(ABORT, 'audit events are append-only'); END""")
-    connection.execute("PRAGMA user_version = 4")
+    connection.execute("PRAGMA user_version = 5")
 
 
 def initialize_database(path: Path | None = None) -> Path:
@@ -142,7 +145,7 @@ def initialize_database(path: Path | None = None) -> Path:
     path = path or database_path()
     with closing(connect_database(path)) as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4):
+        if version not in (0, 1, 2, 3, 4, 5):
             raise RuntimeError(f"Unsupported database schema version: {version}")
 
         if version == 0:
@@ -166,6 +169,20 @@ def initialize_database(path: Path | None = None) -> Path:
                 for table in TABLE_PRIMARY_KEYS:
                     connection.execute(f"DROP TRIGGER IF EXISTS {table}_fill_timestamps")
                     connection.execute(f"DROP TRIGGER IF EXISTS {table}_touch_updated_at")
+            if 0 < version < 5:
+                connection.executescript("""CREATE TABLE IF NOT EXISTS fx_rate (
+                    id INTEGER PRIMARY KEY,
+                    source_currency_id INTEGER NOT NULL REFERENCES currency(currency_id) ON DELETE RESTRICT,
+                    target_currency_id INTEGER NOT NULL REFERENCES currency(currency_id) ON DELETE RESTRICT,
+                    rate_date TEXT NOT NULL CHECK (rate_date = date(rate_date)),
+                    rate TEXT NOT NULL CHECK (CAST(rate AS REAL) > 0),
+                    source TEXT NOT NULL CHECK (trim(source) <> ''),
+                    approved INTEGER NOT NULL DEFAULT 0 CHECK (approved IN (0, 1)),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (source_currency_id, target_currency_id, rate_date),
+                    CHECK (source_currency_id <> target_currency_id));
+                    CREATE INDEX IF NOT EXISTS fx_rate_lookup_idx ON fx_rate(source_currency_id, target_currency_id, approved, rate_date DESC);""")
             _create_timestamp_triggers(connection)
             _migrate_audit(connection)
             connection.executemany(
@@ -179,5 +196,6 @@ def initialize_database(path: Path | None = None) -> Path:
                     ("SYSTEM", None, "SYSTEM"),
                 ],
             )
+            seed_usd_reference_rates(connection)
 
     return path

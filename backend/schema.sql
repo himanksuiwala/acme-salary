@@ -1,4 +1,4 @@
--- Version 4. Dates use YYYY-MM-DD text; monetary amounts use integer minor units.
+-- Version 5. Dates use YYYY-MM-DD text; monetary amounts use integer minor units.
 BEGIN IMMEDIATE;
 
 CREATE TABLE currency (
@@ -11,6 +11,21 @@ CREATE TABLE currency (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE fx_rate (
+    id INTEGER PRIMARY KEY,
+    source_currency_id INTEGER NOT NULL REFERENCES currency(currency_id) ON DELETE RESTRICT,
+    target_currency_id INTEGER NOT NULL REFERENCES currency(currency_id) ON DELETE RESTRICT,
+    rate_date TEXT NOT NULL CHECK (rate_date = date(rate_date)),
+    rate TEXT NOT NULL CHECK (CAST(rate AS REAL) > 0),
+    source TEXT NOT NULL CHECK (trim(source) <> ''),
+    approved INTEGER NOT NULL DEFAULT 0 CHECK (approved IN (0, 1)),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (source_currency_id, target_currency_id, rate_date),
+    CHECK (source_currency_id <> target_currency_id)
+);
+CREATE INDEX fx_rate_lookup_idx ON fx_rate(source_currency_id, target_currency_id, approved, rate_date DESC);
 
 CREATE TABLE country (
     country_id INTEGER PRIMARY KEY,
@@ -170,5 +185,5 @@ CREATE INDEX allowance_type_idx ON employee_allowance(allowance_type_id);
 CREATE INDEX app_user_employee_idx ON app_user(employee_id);
 CREATE INDEX audit_user_idx ON audit_log(user_id);
 
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;
 COMMIT;

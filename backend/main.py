@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from backend.database import connect_database, initialize_database
 from backend.employee_api import router as employee_router
 from backend.audit_api import router as audit_router
+from backend.analytics_api import router as analytics_router
 from backend.audit_http import AuditMiddleware
 
 
@@ -22,6 +23,7 @@ app = FastAPI(title="Employee Salary Management API", lifespan=lifespan)
 app.add_middleware(AuditMiddleware)
 app.include_router(employee_router)
 app.include_router(audit_router)
+app.include_router(analytics_router)
 
 
 @app.get("/api/health", response_model=None)

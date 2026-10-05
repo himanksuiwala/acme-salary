@@ -6,10 +6,10 @@ const frequencyLabels: Record<string, string> = {
   HOURLY: 'hour',
 }
 
-export function formatMoney(amount: number, currency: Currency, frequency?: string): string {
+export function formatMoney(amount: number, currency: Currency, frequency?: string, locale?: string): string {
   const decimals = currency.decimal_places
   const value = amount / 10 ** decimals
-  const formatted = new Intl.NumberFormat(undefined, {
+  const formatted = new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: currency.code,
     currencyDisplay: 'narrowSymbol',

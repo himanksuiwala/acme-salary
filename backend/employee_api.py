@@ -115,11 +115,14 @@ def employees(
     search: str | None = None, country: str | None = None,
     department: str | None = None, role: str | None = None, status: str | None = None,
     package_state: PackageState | None = None,
+    as_of: date | None = None, location_id: int | None = Query(None, ge=1),
+    employed_as_of: bool = False,
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
 ) -> dict:
     return list_employees(search=search, country=country, department=department,
                           role=role, status=status, package_state=package_state,
-                          page=page, page_size=page_size)
+                          page=page, page_size=page_size, as_of=as_of,
+                          location_id=location_id, employed_as_of=employed_as_of)
 
 
 @router.get(
@@ -138,9 +141,12 @@ def export_employees(
     search: str | None = None, country: str | None = None,
     department: str | None = None, role: str | None = None,
     status: str | None = None, package_state: PackageState | None = None,
+    as_of: date | None = None, location_id: int | None = Query(None, ge=1),
+    employed_as_of: bool = False,
 ) -> Response:
     content = export_directory(search=search, country=country, department=department,
-                               role=role, status=status, package_state=package_state)
+                               role=role, status=status, package_state=package_state,
+                               as_of=as_of, location_id=location_id, employed_as_of=employed_as_of)
     return Response(content=content, media_type="text/csv; charset=utf-8", headers={
         "Content-Disposition": 'attachment; filename="employee-directory.csv"',
         "Cache-Control": "no-store",

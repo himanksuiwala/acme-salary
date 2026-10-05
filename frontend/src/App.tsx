@@ -1,17 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ClockCounterClockwiseIcon, ListIcon, UsersThreeIcon, WarningCircleIcon } from '@phosphor-icons/react'
-import { Badge } from '@/components/ui/badge'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { ChartBarIcon, ClockCounterClockwiseIcon, ListIcon, UsersThreeIcon } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetPopup, SheetTitle } from '@/components/ui/sheet'
 import { EmployeeDirectory } from '@/features/employees/EmployeeDirectory'
 import { EmployeeProfile } from '@/features/employees/EmployeeProfile'
 import { CompensationForm } from '@/features/employees/CompensationForm'
 import { AuditTrail } from '@/components/product/AuditTrail'
+import type { AnalyticsQuery, Group } from '@/features/analytics/api'
 import { auditFilterKeys, defaultAuditQuery } from '@/features/audit/api'
 import type { AuditQuery } from '@/features/audit/api'
 import type { DirectoryQuery } from '@/features/employees/api'
 
-type LocationState = { query: DirectoryQuery; employeeId: number | null; compensationForm: boolean; audit: boolean; auditQuery: AuditQuery }
+const AnalyticsScreen = lazy(() => import('@/features/analytics/AnalyticsScreen').then((module) => ({ default: module.AnalyticsScreen })))
+
+type LocationState = { query: DirectoryQuery; employeeId: number | null; compensationForm: boolean; audit: boolean; auditQuery: AuditQuery; analytics: boolean; analyticsQuery: AnalyticsQuery }
+
+const analyticsKeys = ['as_of', 'country', 'department', 'role', 'status', 'location_id', 'metric', 'period_from', 'period_to'] as const
+function todayUtc() { return new Date().toISOString().slice(0, 10) }
 
 function readLocation(): LocationState {
   const params = new URLSearchParams(window.location.search)
@@ -24,8 +29,18 @@ function readLocation(): LocationState {
   const auditPageSize = Number(params.get('audit_page_size'))
   auditQuery.page = Number.isInteger(auditPage) && auditPage > 0 ? auditPage : 1
   auditQuery.page_size = [20,50,100].includes(auditPageSize) ? auditPageSize : 20
+  const analyticsDate = params.get('analytics_as_of') || todayUtc()
+  const analyticsQuery: AnalyticsQuery = {
+    as_of: analyticsDate, country: params.get('analytics_country') ?? '',
+    department: params.get('analytics_department') ?? '', role: params.get('analytics_role') ?? '',
+    status: params.get('analytics_status') ?? '', location_id: params.get('analytics_location_id') ?? '',
+    metric: (['base', 'variable', 'allowances', 'target'].includes(params.get('analytics_metric') ?? '') ? params.get('analytics_metric') : 'base') as AnalyticsQuery['metric'],
+    period_from: params.get('analytics_period_from') || `${analyticsDate.slice(0, 7)}-01`,
+    period_to: params.get('analytics_period_to') || analyticsDate,
+  }
   return {
     audit: params.get('view') === 'audit',
+    analytics: params.get('view') === 'analytics', analyticsQuery,
     auditQuery,
     query: {
       search: params.get('search') ?? '',
@@ -34,6 +49,9 @@ function readLocation(): LocationState {
       role: params.get('role') ?? '',
       status: params.get('status') === 'all' ? '' : (params.get('status') ?? 'ACTIVE'),
       package_state: params.get('package_state') ?? '',
+      as_of: params.get('as_of') ?? '',
+      location_id: params.get('location_id') ?? '',
+      employed_as_of: params.get('employed_as_of') ?? '',
       page: Number.isInteger(page) && page > 0 ? page : 1,
       page_size: [20, 50, 100].includes(pageSize) ? pageSize : 20,
     },
@@ -44,8 +62,8 @@ function readLocation(): LocationState {
 
 function writeLocation(state: LocationState, replace = false) {
   const params = new URLSearchParams()
-  const { query, employeeId, compensationForm, audit, auditQuery } = state
-  for (const key of ['search', 'country', 'department', 'role', 'package_state'] as const) {
+  const { query, employeeId, compensationForm, audit, auditQuery, analytics, analyticsQuery } = state
+  for (const key of ['search', 'country', 'department', 'role', 'package_state', 'as_of', 'location_id', 'employed_as_of'] as const) {
     if (query[key]) params.set(key, query[key])
   }
   if (query.status !== 'ACTIVE') params.set('status', query.status || 'all')
@@ -54,9 +72,11 @@ function writeLocation(state: LocationState, replace = false) {
   if (employeeId) params.set('employee', String(employeeId))
   if (employeeId && compensationForm) params.set('view', 'new-package')
   if (audit) params.set('view', 'audit')
+  if (analytics) params.set('view', 'analytics')
   for (const key of auditFilterKeys) if (auditQuery[key]) params.set(`audit_${key}`, auditQuery[key])
   if (auditQuery.page > 1) params.set('audit_page', String(auditQuery.page))
   if (auditQuery.page_size !== 20) params.set('audit_page_size', String(auditQuery.page_size))
+  if (analytics) for (const key of analyticsKeys) if (analyticsQuery[key]) params.set(`analytics_${key}`, analyticsQuery[key])
   const url = `${window.location.pathname}${params.size ? `?${params}` : ''}`
   window.history[replace ? 'replaceState' : 'pushState'](null, '', url)
 }
@@ -73,24 +93,23 @@ function Brand() {
   )
 }
 
-function NavContents({ onEmployees, onAudit, audit }: { onEmployees: () => void; onAudit: () => void; audit: boolean }) {
+function NavContents({ onEmployees, onAnalytics, onAudit, audit, analytics }: { onEmployees: () => void; onAnalytics: () => void; onAudit: () => void; audit: boolean; analytics: boolean }) {
   return (
     <>
       <Brand />
       <nav aria-label="Main navigation" className="px-3 pt-5">
         <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Workspace</p>
-        <button type="button" aria-current={!audit ? 'page' : undefined} onClick={onEmployees} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${!audit ? 'bg-neutral-100 text-foreground' : 'text-muted-foreground'}`}>
+        <button type="button" aria-current={!audit && !analytics ? 'page' : undefined} onClick={onEmployees} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${!audit && !analytics ? 'bg-neutral-100 text-foreground' : 'text-muted-foreground'}`}>
           <UsersThreeIcon size={19} weight="fill" aria-hidden="true" />Employees
+        </button>
+        <button type="button" aria-current={analytics ? 'page' : undefined} onClick={onAnalytics} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${analytics ? 'bg-neutral-100 text-foreground' : 'text-muted-foreground'}`}>
+          <ChartBarIcon size={19} weight={analytics ? 'fill' : 'regular'} aria-hidden="true" />Analytics
         </button>
         <p className="px-3 pb-2 pt-7 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Administration</p>
         <button type="button" aria-current={audit ? 'page' : undefined} onClick={onAudit} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${audit ? 'bg-neutral-100 text-foreground' : 'text-muted-foreground'}`}>
           <ClockCounterClockwiseIcon size={19} weight={audit ? 'fill' : 'regular'} aria-hidden="true" />Audit log
         </button>
       </nav>
-      <div className="mt-auto border-t px-5 py-5">
-        <p className="text-xs font-medium">Local development</p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">This workspace has no sign in or access controls.</p>
-      </div>
     </>
   )
 }
@@ -117,7 +136,7 @@ function App() {
     const previous = locationRef.current
     const filterChanged = Object.keys(patch).some((key) => key !== 'page' && previous.query[key as keyof DirectoryQuery] !== patch[key as keyof DirectoryQuery])
     const next: LocationState = {
-      ...previous, audit: false,
+      ...previous, audit: false, analytics: false,
       query: { ...previous.query, ...patch, page: patch.page ?? (filterChanged ? 1 : previous.query.page) },
       employeeId: null,
       compensationForm: false,
@@ -129,7 +148,7 @@ function App() {
 
   const openEmployee = useCallback((employeeId: number) => {
     setSavedPackageId(null)
-    const next = { ...locationRef.current, employeeId, compensationForm: false, audit: false }
+    const next = { ...locationRef.current, employeeId, compensationForm: false, audit: false, analytics: false }
     locationRef.current = next
     setLocation(next)
     writeLocation(next)
@@ -139,8 +158,8 @@ function App() {
   const openDirectory = useCallback(() => {
     setNavOpen(false)
     setSavedPackageId(null)
-    if (locationRef.current.employeeId === null && !locationRef.current.audit) return
-    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: false }
+    if (locationRef.current.employeeId === null && !locationRef.current.audit && !locationRef.current.analytics) return
+    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: false, analytics: false }
     locationRef.current = next
     setLocation(next)
     writeLocation(next)
@@ -149,14 +168,14 @@ function App() {
   const openAudit = useCallback(() => {
     setNavOpen(false)
     const previous = locationRef.current
-    const next = { ...previous, employeeId: null, compensationForm: false, audit: true,
+    const next = { ...previous, employeeId: null, compensationForm: false, audit: true, analytics: false,
       auditQuery: { ...previous.auditQuery, employee_id: '', page: 1 } }
     locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
   }, [])
 
   const openEmployeeAudit = useCallback((employeeId: number) => {
     setNavOpen(false)
-    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: true,
+    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: true, analytics: false,
       auditQuery: { ...defaultAuditQuery, employee_id: String(employeeId) } }
     locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
   }, [])
@@ -165,6 +184,32 @@ function App() {
     const previous = locationRef.current
     const next = { ...previous, auditQuery: { ...previous.auditQuery, ...patch, page: patch.page ?? 1 } }
     locationRef.current = next; setLocation(next); writeLocation(next)
+  }, [])
+
+  const openAnalytics = useCallback(() => {
+    setNavOpen(false)
+    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: false, analytics: true }
+    locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
+  }, [])
+
+  const updateAnalyticsQuery = useCallback((patch: Partial<AnalyticsQuery>) => {
+    const previous = locationRef.current
+    const next = { ...previous, analyticsQuery: { ...previous.analyticsQuery, ...patch } }
+    locationRef.current = next; setLocation(next); writeLocation(next)
+  }, [])
+
+  const analyticsDrilldown = useCallback((kind?: 'country' | 'department' | 'role', group?: Group) => {
+    const previous = locationRef.current
+    const selection = previous.analyticsQuery
+    const query: DirectoryQuery = {
+      search: '', country: selection.country, department: selection.department,
+      role: selection.role, status: selection.status, package_state: '',
+      location_id: selection.location_id, as_of: selection.as_of, employed_as_of: 'true',
+      page: 1, page_size: 20,
+    }
+    if (kind && group) query[kind] = group.key
+    const next = { ...previous, query, analytics: false, audit: false, employeeId: null, compensationForm: false }
+    locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
   }, [])
 
   const openCompensationForm = useCallback(() => {
@@ -185,20 +230,16 @@ function App() {
 
   return (
     <div className="min-h-svh bg-neutral-50 text-foreground">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r bg-white lg:flex"><NavContents onEmployees={openDirectory} onAudit={openAudit} audit={location.audit} /></aside>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r bg-white lg:flex"><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} audit={location.audit} analytics={location.analytics} /></aside>
       <div className="lg:pl-[232px]">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <Button ref={navTrigger} className="lg:hidden" aria-label="Open navigation" size="icon-sm" variant="ghost" onClick={() => setNavOpen(true)}><ListIcon aria-hidden="true" size={20} /></Button>
-            <span className="truncate text-sm text-muted-foreground">Workspace <span className="mx-2 text-neutral-300">/</span> <span className="font-medium text-foreground">{location.audit ? 'Audit log' : location.compensationForm ? 'New compensation package' : location.employeeId ? 'Employee profile' : 'Employees'}</span></span>
+            <span className="truncate text-sm text-muted-foreground">Workspace <span className="mx-2 text-neutral-300">/</span> <span className="font-medium text-foreground">{location.audit ? 'Audit log' : location.analytics ? 'Analytics' : location.compensationForm ? 'New compensation package' : location.employeeId ? 'Employee profile' : 'Employees'}</span></span>
           </div>
-          <Badge variant="outline" className="shrink-0">Local development</Badge>
         </header>
-        <div role="note" className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-xs leading-5 text-amber-900 sm:px-6 lg:px-8">
-          <WarningCircleIcon aria-hidden="true" className="mt-0.5 shrink-0" size={15} />Employee and salary data are visible in this local development build. Access controls are required before deployment.
-        </div>
         <main>
-          {location.audit ? <AuditTrail query={location.auditQuery} onQueryChange={updateAuditQuery} onOpenEmployee={openEmployee} /> : location.employeeId ? location.compensationForm
+          {location.audit ? <AuditTrail query={location.auditQuery} onQueryChange={updateAuditQuery} onOpenEmployee={openEmployee} /> : location.analytics ? <Suspense fallback={<p className="px-4 py-8 text-sm text-muted-foreground" role="status">Loading analytics…</p>}><AnalyticsScreen query={location.analyticsQuery} onQueryChange={updateAnalyticsQuery} onViewEmployees={analyticsDrilldown} /></Suspense> : location.employeeId ? location.compensationForm
             ? <CompensationForm key={location.employeeId} employeeId={location.employeeId} onCancel={closeCompensationForm} onSaved={completeCompensationForm} />
             : <EmployeeProfile key={location.employeeId} employeeId={location.employeeId} savedPackageId={savedPackageId} onBack={openDirectory} onRecordCompensation={openCompensationForm} onFullAuditLog={openEmployeeAudit} />
             : <EmployeeDirectory query={location.query} updateQuery={updateQuery} onOpenEmployee={openEmployee} />}
@@ -207,7 +248,7 @@ function App() {
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetPopup finalFocus={navTrigger} side="left" aria-label="Navigation" className="max-w-[280px]">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <div className="flex min-h-full flex-col"><NavContents onEmployees={openDirectory} onAudit={openAudit} audit={location.audit} /></div>
+          <div className="flex min-h-full flex-col"><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} audit={location.audit} analytics={location.analytics} /></div>
         </SheetPopup>
       </Sheet>
     </div>

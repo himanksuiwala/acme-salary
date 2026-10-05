@@ -19,6 +19,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from backend.database import connect_database, database_path, initialize_database
+from backend.fx_reference import seed_usd_reference_rates
 
 
 DEFAULT_AS_OF = date(2026, 10, 1)
@@ -334,6 +335,7 @@ def seed_sqlite(dataset: Dataset, path: Path) -> Path:
 
             for table in ("currency", "country", "location"):
                 _insert_rows(connection, table, dataset[table])
+            seed_usd_reference_rates(connection)
 
             departments = [
                 row | {"manager_id": None, "updated_at": row["created_at"]}

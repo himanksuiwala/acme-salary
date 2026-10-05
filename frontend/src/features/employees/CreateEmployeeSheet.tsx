@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
+import { DatePicker } from '@/components/product/DatePicker'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Form } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { parseIsoDate } from '@/lib/date'
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Sheet, SheetDescription, SheetFooter, SheetHeader, SheetPanel, SheetPopup, SheetTitle,
@@ -45,6 +47,10 @@ export function CreateEmployeeSheet({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!parseIsoDate(draft.joining_date)) {
+      setError('Choose a joining date.')
+      return
+    }
     if (!draft.department_code || !draft.location_id) {
       setError('Select a department and location.')
       return
@@ -79,7 +85,6 @@ export function CreateEmployeeSheet({
         </SheetHeader>
         <Form className="contents" onSubmit={handleSubmit}>
           <SheetPanel className="space-y-5">
-            <p className="text-xs text-muted-foreground">Local development only · Changes use the temporary audit actor.</p>
             {!hasReferences && (
               <div className="rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm text-warning-foreground" role="alert">
                 Department and location reference data are required before an employee can be added.
@@ -93,7 +98,8 @@ export function CreateEmployeeSheet({
               </Field>
               <Field>
                 <FieldLabel htmlFor="joining-date">Joining date</FieldLabel>
-                <Input id="joining-date" type="date" required value={draft.joining_date} onChange={(event) => update('joining_date', event.target.value)} />
+                <DatePicker id="joining-date" label="Joining date" required value={draft.joining_date} invalid={error === 'Choose a joining date.'} describedBy={error === 'Choose a joining date.' ? 'joining-date-error' : undefined} onChange={(value) => update('joining_date', value)} />
+                {error === 'Choose a joining date.' && <p id="joining-date-error" role="alert" className="text-xs text-destructive-foreground">Choose a joining date.</p>}
               </Field>
               <Field>
                 <FieldLabel htmlFor="first-name">First name</FieldLabel>

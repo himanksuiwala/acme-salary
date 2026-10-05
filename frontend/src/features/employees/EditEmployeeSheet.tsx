@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/product/DatePicker";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -84,7 +85,7 @@ export function EditEmployeeSheet({
         <SheetHeader>
           <SheetTitle>Edit employee details</SheetTitle>
           <SheetDescription>
-            Update the supported identity and organization fields. Changes are audited in this local development build.
+            Update the supported identity and organization fields. Changes are audited.
           </SheetDescription>
         </SheetHeader>
         <Form className="contents" onSubmit={submit}>
@@ -223,14 +224,8 @@ export function EditEmployeeSheet({
             </div>
             <Field>
               <FieldLabel htmlFor="edit-end">Termination date (optional)</FieldLabel>
-              <Input
-                nativeInput
-                id="edit-end"
-                type="date"
-                min={employee.joining_date}
-                value={draft.termination_date || ""}
-                onChange={(event) => change("termination_date", event.target.value || null)}
-              />
+              <DatePicker id="edit-end" label="Termination date" min={employee.joining_date}
+                value={draft.termination_date || ""} onChange={(value) => change("termination_date", value || null)} />
             </Field>
           </SheetPanel>
           <SheetFooter>

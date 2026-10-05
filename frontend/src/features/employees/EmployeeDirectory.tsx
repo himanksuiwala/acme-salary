@@ -4,6 +4,7 @@ import {
   PlusIcon, RowsIcon, UsersThreeIcon, WarningCircleIcon, XIcon,
 } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
+import { DatePicker } from '@/components/product/DatePicker'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
@@ -66,10 +67,11 @@ function EmployeeName({ employee, onOpen }: { employee: Employee; onOpen: () => 
   )
 }
 
-function DirectoryRows({ employees, columns, compact, onOpen }: {
+function DirectoryRows({ employees, columns, compact, asOf, onOpen }: {
   employees: Employee[]
   columns: Record<Column, boolean>
   compact: boolean
+  asOf: string
   onOpen: (id: number) => void
 }) {
   return (
@@ -97,7 +99,7 @@ function DirectoryRows({ employees, columns, compact, onOpen }: {
               {columns.role && <TableHead>Role and department</TableHead>}
               {columns.location && <TableHead>Location</TableHead>}
               {columns.status && <TableHead>Status</TableHead>}
-              {columns.pay && <TableHead className="text-right">Current base pay</TableHead>}
+              {columns.pay && <TableHead className="text-right">{asOf ? 'Base pay as of date' : 'Current base pay'}</TableHead>}
               {columns.package && <TableHead>Package state</TableHead>}
               <TableHead className="pr-5 text-right">Open</TableHead>
             </TableRow>
@@ -176,6 +178,11 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
     updateQuery(patch)
   }
 
+  function clearFilters() {
+    setSearchInput('')
+    changeFilter({ search: '', country: '', department: '', role: '', status: '', package_state: '', as_of: '', location_id: '', employed_as_of: '' })
+  }
+
 
   async function handleExport() {
     setExporting(true)
@@ -193,6 +200,8 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
     ['search', 'Search', query.search], ['country', 'Country', query.country],
     ['department', 'Department', query.department], ['role', 'Role', query.role],
     ['status', 'Status', query.status], ['package_state', 'Package', query.package_state],
+    ['as_of', 'As of UTC', query.as_of], ['location_id', 'Location', query.location_id],
+    ['employed_as_of', 'Population', query.employed_as_of],
   ] as const).filter((item) => item[2])
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
   const first = data && data.total ? (data.page - 1) * data.page_size + 1 : 0
@@ -205,7 +214,7 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-5">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-3"><h1 className="text-[28px] leading-9 font-semibold tracking-tight">Employees</h1>{data && <span aria-live="polite" className="text-sm text-muted-foreground tabular-nums">{data.total.toLocaleString()} in view</span>}</div>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Find employees, inspect effective compensation, and maintain the directory. Figures use each employee’s stored currency.</p>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Find employees, inspect effective compensation, and maintain the directory. Figures use each employee’s stored currency{query.as_of ? ` as of ${formatDate(query.as_of)} UTC` : ''}.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" loading={exporting} disabled={!data || data.total === 0} onClick={handleExport}><DownloadSimpleIcon aria-hidden="true" />Export directory</Button>
@@ -225,6 +234,8 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
             <FilterSelect label="Role" selectClassName="w-[6.5rem]" value={query.role} values={options?.roles.map((item) => ({ value: item, label: item })) ?? []} onChange={(value) => changeFilter({ role: value })} />
             <FilterSelect label="Status" selectClassName="w-[5.5rem]" value={query.status} values={(options?.statuses ?? ['ACTIVE']).map((item) => ({ value: item, label: statusLabel(item) }))} onChange={(value) => changeFilter({ status: value })} />
             <FilterSelect label="Package" selectClassName="w-[7rem]" value={query.package_state} values={(options?.package_states ?? []).map((item) => ({ value: item, label: packageLabels[item] }))} onChange={(value) => changeFilter({ package_state: value })} />
+            <FilterSelect label="Location" selectClassName="w-[9rem]" value={query.location_id} values={options?.locations.map((item) => ({ value: String(item.id), label: `${item.name}, ${item.country_name}` })) ?? []} onChange={(value) => changeFilter({ location_id: value })} />
+            {query.as_of && <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground"><label htmlFor="directory-as-of">As of UTC</label><DatePicker id="directory-as-of" label="As of UTC" value={query.as_of} onChange={(value) => changeFilter({ as_of: value })} /></div>}
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
@@ -232,10 +243,10 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
             <span className="mr-1 font-medium text-muted-foreground">Active filters</span>
             {activeFilters.length === 0 ? <span className="text-muted-foreground">None</span> : activeFilters.map(([key, label, value]) => (
               <Button key={key} size="xs" variant="outline" onClick={() => { if (key === 'search') setSearchInput(''); changeFilter({ [key]: '' }) }}>
-                {label}: {key === 'status' ? statusLabel(value) : key === 'package_state' ? packageLabels[value as keyof typeof packageLabels] : value}<XIcon aria-hidden="true" size={12} />
+                {label}: {key === 'employed_as_of' ? 'Employed as of date' : key === 'status' ? statusLabel(value) : key === 'package_state' ? packageLabels[value as keyof typeof packageLabels] : value}<XIcon aria-hidden="true" size={12} />
               </Button>
             ))}
-            {activeFilters.length > 0 && <Button size="xs" variant="ghost" onClick={() => { setSearchInput(''); changeFilter({ search: '', country: '', department: '', role: '', status: '', package_state: '' }) }}>Clear all</Button>}
+            {activeFilters.length > 0 && <Button size="xs" variant="ghost" onClick={clearFilters}>Clear all</Button>}
           </div>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {data && <span className="mr-2 tabular-nums">Showing {first}–{last} of {data.total.toLocaleString()}</span>}
@@ -257,8 +268,8 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
       {loading ? <div aria-label="Loading employees" className="space-y-2"><Skeleton className="h-10 w-full" />{Array.from({ length: 8 }, (_, index) => <Skeleton className="h-14 w-full" key={index} />)}</div> : error ? (
         <div className="rounded-xl border bg-card px-6 py-12 text-center" role="alert"><WarningCircleIcon aria-hidden="true" className="mx-auto text-destructive" size={28} /><h2 className="mt-4 text-lg font-semibold">Couldn’t load employees</h2><p className="mt-2 text-sm text-muted-foreground">{error}</p><Button className="mt-5" variant="outline" onClick={() => setRetry((value) => value + 1)}>Try again</Button></div>
       ) : data && data.items.length === 0 ? (
-        <div className="rounded-xl border bg-card"><Empty><EmptyHeader><EmptyMedia variant="icon"><UsersThreeIcon aria-hidden="true" /></EmptyMedia><EmptyTitle>{pageOutOfRange ? 'This page is unavailable' : noEmployees ? 'No employees yet' : 'No employees match these filters'}</EmptyTitle><p className="mt-2 text-sm text-muted-foreground">{pageOutOfRange ? 'The directory has fewer pages now.' : noEmployees ? 'Add an employee after departments and locations are configured.' : 'Try a different search or clear the filters.'}</p></EmptyHeader><div className="flex gap-2">{pageOutOfRange ? <Button variant="outline" onClick={() => changeFilter({ page: 1 })}>Go to first page</Button> : noEmployees ? <Button onClick={() => setAddOpen(true)}>Add employee</Button> : <Button variant="outline" onClick={() => { setSearchInput(''); changeFilter({ search: '', country: '', department: '', role: '', status: '', package_state: '' }) }}>Clear filters</Button>}</div></Empty></div>
-      ) : data ? <DirectoryRows employees={data.items} columns={columns} compact={compact} onOpen={onOpenEmployee} /> : null}
+        <div className="rounded-xl border bg-card"><Empty><EmptyHeader><EmptyMedia variant="icon"><UsersThreeIcon aria-hidden="true" /></EmptyMedia><EmptyTitle>{pageOutOfRange ? 'This page is unavailable' : noEmployees ? 'No employees yet' : 'No employees match these filters'}</EmptyTitle><p className="mt-2 text-sm text-muted-foreground">{pageOutOfRange ? 'The directory has fewer pages now.' : noEmployees ? 'Add an employee after departments and locations are configured.' : 'Try a different search or clear the filters.'}</p></EmptyHeader><div className="flex gap-2">{pageOutOfRange ? <Button variant="outline" onClick={() => changeFilter({ page: 1 })}>Go to first page</Button> : noEmployees ? <Button onClick={() => setAddOpen(true)}>Add employee</Button> : <Button variant="outline" onClick={clearFilters}>Clear filters</Button>}</div></Empty></div>
+      ) : data ? <DirectoryRows employees={data.items} columns={columns} compact={compact} asOf={query.as_of} onOpen={onOpenEmployee} /> : null}
 
       {data && data.total > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card px-4 py-3">

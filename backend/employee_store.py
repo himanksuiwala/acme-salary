@@ -144,7 +144,9 @@ def _directory_employee(row: sqlite3.Row) -> dict:
 
 def _directory_where(*, search: str | None, country: str | None,
                      department: str | None, role: str | None,
-                     status: str | None, package_state: str | None) -> tuple[str, list[str]]:
+                     status: str | None, package_state: str | None,
+                     location_id: int | None = None, employed_as_of: bool = False,
+                     sql_date: str = "date('now')") -> tuple[str, list[str]]:
     predicates = []
     parameters: list[str] = []
     if search and search.strip():
@@ -154,6 +156,9 @@ def _directory_where(*, search: str | None, country: str | None,
             OR casefold(e.first_name || ' ' || e.last_name) LIKE ? ESCAPE '\\'
             OR casefold(e.employee_code) LIKE ? ESCAPE '\\')""")
         parameters.extend([pattern] * 4)
+    if role == "UNSPECIFIED":
+        predicates.append("(e.job_title IS NULL OR trim(e.job_title) = '')")
+        role = None
     for column, value in (
         ("c.country_code", country), ("d.department_code", department),
         ("e.job_title", role), ("e.status", status),
@@ -162,24 +167,35 @@ def _directory_where(*, search: str | None, country: str | None,
             predicates.append(f"casefold({column}) = ?")
             parameters.append(value.strip().casefold())
     if package_state is not None:
-        predicates.append(f"({PACKAGE_STATE}) = ?")
+        predicates.append(f"({PACKAGE_STATE.replace('date(\'now\')', sql_date)}) = ?")
         parameters.append(package_state)
+    if location_id is not None:
+        predicates.append("l.location_id = ?")
+        parameters.append(location_id)
+    if employed_as_of:
+        predicates.extend((f"e.joining_date <= {sql_date}",
+                           f"(e.termination_date IS NULL OR e.termination_date >= {sql_date})"))
     return ("WHERE " + " AND ".join(predicates) if predicates else "", parameters)
 
 
 def list_employees(*, search: str | None, country: str | None, department: str | None,
                    role: str | None, status: str | None, package_state: str | None = None,
-                   page: int, page_size: int) -> dict:
+                   page: int, page_size: int, as_of: date | None = None,
+                   location_id: int | None = None, employed_as_of: bool = False) -> dict:
+    sql_date = f"'{as_of.isoformat()}'" if as_of else "date('now')"
+    directory_from = DIRECTORY_FROM.replace("date('now')", sql_date)
+    directory_columns = DIRECTORY_COLUMNS.replace("date('now')", sql_date)
     where_clause, parameters = _directory_where(
         search=search, country=country, department=department, role=role,
-        status=status, package_state=package_state,
+        status=status, package_state=package_state, location_id=location_id,
+        employed_as_of=employed_as_of, sql_date=sql_date,
     )
     with closing(_connect()) as connection:
         total = connection.execute(
-            f"SELECT COUNT(*) {DIRECTORY_FROM} {where_clause}", parameters
+            f"SELECT COUNT(*) {directory_from} {where_clause}", parameters
         ).fetchone()[0]
         rows = connection.execute(
-            f"""SELECT {DIRECTORY_COLUMNS} {DIRECTORY_FROM} {where_clause}
+            f"""SELECT {directory_columns} {directory_from} {where_clause}
                 ORDER BY e.employee_code COLLATE NOCASE, e.employee_id
                 LIMIT ? OFFSET ?""",
             [*parameters, page_size, (page - 1) * page_size],
@@ -326,10 +342,16 @@ def update_employee(employee_id: int, payload: dict) -> dict:
 @audited('EXPORT_FAILED', 'export')
 def export_directory(*, search: str | None, country: str | None,
                      department: str | None, role: str | None,
-                     status: str | None, package_state: str | None) -> str:
+                     status: str | None, package_state: str | None,
+                     as_of: date | None = None, location_id: int | None = None,
+                     employed_as_of: bool = False) -> str:
+    sql_date = f"'{as_of.isoformat()}'" if as_of else "date('now')"
+    directory_from = DIRECTORY_FROM.replace("date('now')", sql_date)
+    directory_columns = DIRECTORY_COLUMNS.replace("date('now')", sql_date)
     where_clause, parameters = _directory_where(
         search=search, country=country, department=department, role=role,
-        status=status, package_state=package_state,
+        status=status, package_state=package_state, location_id=location_id,
+        employed_as_of=employed_as_of, sql_date=sql_date,
     )
     output = io.StringIO()
     writer = csv.writer(output)
@@ -340,7 +362,7 @@ def export_directory(*, search: str | None, country: str | None,
         connection.execute("BEGIN IMMEDIATE")
         try:
             rows = connection.execute(
-                f"SELECT {DIRECTORY_COLUMNS} {DIRECTORY_FROM} {where_clause} "
+                f"SELECT {directory_columns} {directory_from} {where_clause} "
                 "ORDER BY e.employee_code COLLATE NOCASE, e.employee_id", parameters,
             ).fetchall()
             for row in rows:
@@ -361,7 +383,9 @@ def export_directory(*, search: str | None, country: str | None,
                            employee_ids=[row['employee_id'] for row in rows],
                            metadata={'row_count':len(rows), 'filters':{
                                'search':search, 'country':country, 'department':department,
-                               'role':role, 'status':status, 'package_state':package_state}})
+                               'role':role, 'status':status, 'package_state':package_state,
+                               'as_of':as_of.isoformat() if as_of else None,
+                               'location_id':location_id, 'employed_as_of':employed_as_of}})
             connection.commit()
         except Exception:
             connection.rollback()
