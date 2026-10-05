@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
   ArrowRightIcon, ColumnsIcon, DownloadSimpleIcon, MagnifyingGlassIcon,
-  PlusIcon, RowsIcon, UsersThreeIcon, WarningCircleIcon, XIcon,
+  PlusIcon, RowsIcon, SlidersHorizontalIcon, UsersThreeIcon, WarningCircleIcon, XIcon,
 } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
+import { ContextInfo } from '@/components/product/ContextInfo'
 import { DatePicker } from '@/components/product/DatePicker'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -11,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from '@/components/ui/menu'
 import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination'
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Sheet, SheetDescription, SheetFooter, SheetHeader, SheetPanel, SheetPopup, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { DirectoryOptions, DirectoryQuery, DirectoryResponse, Employee } from './api'
@@ -28,22 +30,24 @@ const columnNames: Record<Column, string> = {
   pay: 'Current base pay', package: 'Package state',
 }
 
-function FilterSelect({ label, value, values, onChange, selectClassName, showLabel = true }: {
+function FilterSelect({ label, value, values, onChange, selectClassName, showLabel = true, stacked = false }: {
   label: string
   value: string
   values: { value: string; label: string }[]
   onChange: (value: string) => void
   selectClassName?: string
   showLabel?: boolean
+  stacked?: boolean
 }) {
-  const selectedLabel = values.find((item) => item.value === value)?.label ?? (value || 'All')
+  const emptyLabel = ({ Country: 'All countries', Department: 'All departments', Role: 'All roles', Status: 'All statuses', Package: 'All package states', Location: 'All locations' } as Record<string, string>)[label] ?? 'All'
+  const selectedLabel = values.find((item) => item.value === value)?.label ?? (value || emptyLabel)
   return (
-    <div className="flex min-w-0 shrink-0 items-center gap-1.5">
-      {showLabel && <span className="shrink-0 text-[13px] font-medium text-muted-foreground">{label}:</span>}
+    <div className={stacked ? 'min-w-0' : 'flex min-w-0 shrink-0 items-center gap-1.5'}>
+      {showLabel && <span className={stacked ? 'mb-1.5 block text-[13px] font-medium text-muted-foreground' : 'shrink-0 text-[13px] font-medium text-muted-foreground'}>{label}{stacked ? '' : ':'}</span>}
       <Select value={value || 'all'} onValueChange={(next) => onChange(next === 'all' ? '' : String(next))}>
-        <SelectTrigger aria-label={label} title={selectedLabel} size="sm" className={`min-w-0 ${selectClassName ?? 'w-full'}`}><SelectValue>{(selected: string | null) => selected === 'all' ? 'All' : values.find((item) => item.value === selected)?.label ?? selected}</SelectValue></SelectTrigger>
+        <SelectTrigger aria-label={label} title={selectedLabel} size={stacked ? 'default' : 'sm'} className={`min-w-0 ${selectClassName ?? 'w-full'}`}><SelectValue>{(selected: string | null) => selected === 'all' ? emptyLabel : values.find((item) => item.value === selected)?.label ?? selected}</SelectValue></SelectTrigger>
         <SelectPopup>
-          <SelectItem value="all">All</SelectItem>
+          <SelectItem value="all">{emptyLabel}</SelectItem>
           {values.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
         </SelectPopup>
       </Select>
@@ -135,6 +139,7 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
   const [searchInput, setSearchInput] = useState(query.search)
   const [retry, setRetry] = useState(0)
   const [addOpen, setAddOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [compact, setCompact] = useState(false)
@@ -183,6 +188,10 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
     changeFilter({ search: '', country: '', department: '', role: '', status: '', package_state: '', as_of: '', location_id: '', employed_as_of: '' })
   }
 
+  function clearCohortFilters() {
+    changeFilter({ country: '', department: '', role: '', status: '', package_state: '', as_of: '', location_id: '', employed_as_of: '' })
+  }
+
 
   async function handleExport() {
     setExporting(true)
@@ -196,13 +205,19 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
     }
   }
 
+  const selectedLocation = options?.locations.find((item) => String(item.id) === query.location_id)
   const activeFilters = ([
-    ['search', 'Search', query.search], ['country', 'Country', query.country],
-    ['department', 'Department', query.department], ['role', 'Role', query.role],
-    ['status', 'Status', query.status], ['package_state', 'Package', query.package_state],
-    ['as_of', 'As of UTC', query.as_of], ['location_id', 'Location', query.location_id],
-    ['employed_as_of', 'Population', query.employed_as_of],
-  ] as const).filter((item) => item[2])
+    { key: 'search', label: 'Search', value: query.search, display: query.search },
+    { key: 'country', label: 'Country', value: query.country, display: options?.countries.find((item) => item.code === query.country)?.name ?? query.country },
+    { key: 'department', label: 'Department', value: query.department, display: options?.departments.find((item) => item.code === query.department)?.name ?? query.department },
+    { key: 'role', label: 'Role', value: query.role, display: query.role },
+    { key: 'status', label: 'Status', value: query.status, display: statusLabel(query.status) },
+    { key: 'package_state', label: 'Package', value: query.package_state, display: packageLabels[query.package_state as keyof typeof packageLabels] ?? query.package_state },
+    { key: 'as_of', label: 'As of UTC', value: query.as_of, display: query.as_of ? formatDate(query.as_of) : '' },
+    { key: 'location_id', label: 'Location', value: query.location_id, display: selectedLocation ? `${selectedLocation.name}, ${selectedLocation.country_name}` : query.location_id },
+    { key: 'employed_as_of', label: 'Population', value: query.employed_as_of, display: 'Employed as of date' },
+  ] as const).filter((item) => item.value)
+  const cohortFilterCount = activeFilters.filter((item) => item.key !== 'search').length
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
   const first = data && data.total ? (data.page - 1) * data.page_size + 1 : 0
   const last = data ? Math.min(data.page * data.page_size, data.total) : 0
@@ -211,45 +226,35 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
 
   return (
     <div className="mx-auto w-full max-w-[1440px] px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-5">
+      <div className="mb-6 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline gap-3"><h1 className="text-[28px] leading-9 font-semibold tracking-tight">Employees</h1>{data && <span aria-live="polite" className="text-sm text-muted-foreground tabular-nums">{data.total.toLocaleString()} in view</span>}</div>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Find employees, inspect effective compensation, and maintain the directory. Figures use each employee’s stored currency{query.as_of ? ` as of ${formatDate(query.as_of)} UTC` : ''}.</p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><h1 className="text-[28px] leading-9 font-semibold tracking-tight">Employees</h1><ContextInfo label="About the employee directory">Find employees, inspect effective compensation, and maintain the directory. Figures use each employee’s stored currency{query.as_of ? ` as of ${formatDate(query.as_of)} UTC` : ''}.</ContextInfo></div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2 sm:justify-self-end">
           <Button variant="outline" loading={exporting} disabled={!data || data.total === 0} onClick={handleExport}><DownloadSimpleIcon aria-hidden="true" />Export directory</Button>
           <Button onClick={() => setAddOpen(true)}><PlusIcon aria-hidden="true" />Add employee</Button>
         </div>
       </div>
 
       <div className="mb-5 rounded-xl border bg-card p-3 sm:p-4">
-        <div className="space-y-3">
-          <div className="relative max-w-md">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 basis-56 sm:max-w-md">
             <MagnifyingGlassIcon aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-muted-foreground" size={18} />
             <Input aria-label="Search employees by name or code" className="[&_input]:pl-9" placeholder="Search by name or code…" type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') changeFilter({ search: searchInput }) }} />
           </div>
-          <div aria-label="Directory filters" className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <FilterSelect label="Country" selectClassName="w-[5.5rem]" value={query.country} values={options?.countries.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => changeFilter({ country: value })} />
-            <FilterSelect label="Department" selectClassName="w-[6.5rem]" value={query.department} values={options?.departments.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => changeFilter({ department: value })} />
-            <FilterSelect label="Role" selectClassName="w-[6.5rem]" value={query.role} values={options?.roles.map((item) => ({ value: item, label: item })) ?? []} onChange={(value) => changeFilter({ role: value })} />
-            <FilterSelect label="Status" selectClassName="w-[5.5rem]" value={query.status} values={(options?.statuses ?? ['ACTIVE']).map((item) => ({ value: item, label: statusLabel(item) }))} onChange={(value) => changeFilter({ status: value })} />
-            <FilterSelect label="Package" selectClassName="w-[7rem]" value={query.package_state} values={(options?.package_states ?? []).map((item) => ({ value: item, label: packageLabels[item] }))} onChange={(value) => changeFilter({ package_state: value })} />
-            <FilterSelect label="Location" selectClassName="w-[9rem]" value={query.location_id} values={options?.locations.map((item) => ({ value: String(item.id), label: `${item.name}, ${item.country_name}` })) ?? []} onChange={(value) => changeFilter({ location_id: value })} />
-            {query.as_of && <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground"><label htmlFor="directory-as-of">As of UTC</label><DatePicker id="directory-as-of" label="As of UTC" value={query.as_of} onChange={(value) => changeFilter({ as_of: value })} /></div>}
-          </div>
+          <Button variant="outline" onClick={() => setFiltersOpen(true)}><SlidersHorizontalIcon aria-hidden="true" />Filters{cohortFilterCount ? ` (${cohortFilterCount})` : ''}</Button>
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="mr-1 font-medium text-muted-foreground">Active filters</span>
-            {activeFilters.length === 0 ? <span className="text-muted-foreground">None</span> : activeFilters.map(([key, label, value]) => (
-              <Button key={key} size="xs" variant="outline" onClick={() => { if (key === 'search') setSearchInput(''); changeFilter({ [key]: '' }) }}>
-                {label}: {key === 'employed_as_of' ? 'Employed as of date' : key === 'status' ? statusLabel(value) : key === 'package_state' ? packageLabels[value as keyof typeof packageLabels] : value}<XIcon aria-hidden="true" size={12} />
+            {activeFilters.length === 0 ? <span className="text-muted-foreground">All employees</span> : activeFilters.map(({ key, label, display }) => (
+              <Button key={key} size="xs" variant="outline" className="max-w-full" aria-label={`Remove ${label} filter`} onClick={() => { if (key === 'search') setSearchInput(''); changeFilter(key === 'as_of' ? { as_of: '', employed_as_of: '' } : { [key]: '' }) }}>
+                <span className="max-w-44 truncate">{label}: {display}</span><XIcon aria-hidden="true" size={12} />
               </Button>
             ))}
             {activeFilters.length > 0 && <Button size="xs" variant="ghost" onClick={clearFilters}>Clear all</Button>}
           </div>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            {data && <span className="mr-2 tabular-nums">Showing {first}–{last} of {data.total.toLocaleString()}</span>}
+            {data && <span aria-live="polite" className="mr-2 tabular-nums">Showing {first}–{last} of {data.total.toLocaleString()}</span>}
             <Button aria-label={compact ? 'Comfortable rows' : 'Compact rows'} title={compact ? 'Comfortable rows' : 'Compact rows'} aria-pressed={compact} size="icon-sm" variant="ghost" onClick={() => setCompact((value) => !value)}><RowsIcon aria-hidden="true" /></Button>
             <Menu>
               <MenuTrigger render={<Button aria-label="Visible columns" title="Visible columns" size="icon-sm" variant="ghost" />}><ColumnsIcon aria-hidden="true" /></MenuTrigger>
@@ -262,6 +267,17 @@ export function EmployeeDirectory({ query, updateQuery, onOpenEmployee }: {
           </div>
         </div>
       </div>
+
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}><SheetPopup aria-label="Employee filters"><SheetHeader><SheetTitle>Filter employees</SheetTitle><SheetDescription className="sr-only">Choose filters for the employee directory.</SheetDescription></SheetHeader><SheetPanel className="space-y-4">
+        {optionsError && <p role="alert" className="rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm text-warning-foreground">Filter choices unavailable. <Button size="xs" variant="ghost" onClick={() => setRetry((value) => value + 1)}>Retry</Button></p>}
+        <FilterSelect stacked label="Country" value={query.country} values={options?.countries.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => changeFilter({ country: value })} />
+        <FilterSelect stacked label="Department" value={query.department} values={options?.departments.map((item) => ({ value: item.code, label: item.name })) ?? []} onChange={(value) => changeFilter({ department: value })} />
+        <FilterSelect stacked label="Role" value={query.role} values={options?.roles.map((item) => ({ value: item, label: item })) ?? []} onChange={(value) => changeFilter({ role: value })} />
+        <FilterSelect stacked label="Status" value={query.status} values={(options?.statuses ?? ['ACTIVE']).map((item) => ({ value: item, label: statusLabel(item) }))} onChange={(value) => changeFilter({ status: value })} />
+        <FilterSelect stacked label="Package" value={query.package_state} values={(options?.package_states ?? []).map((item) => ({ value: item, label: packageLabels[item] }))} onChange={(value) => changeFilter({ package_state: value })} />
+        <FilterSelect stacked label="Location" value={query.location_id} values={options?.locations.map((item) => ({ value: String(item.id), label: `${item.name}, ${item.country_name}` })) ?? []} onChange={(value) => changeFilter({ location_id: value })} />
+        <div><label htmlFor="directory-as-of" className="mb-1.5 block text-[13px] font-medium text-muted-foreground">As of (UTC)</label><DatePicker id="directory-as-of" label="As of (UTC)" value={query.as_of} onChange={(value) => changeFilter({ as_of: value, employed_as_of: value ? query.employed_as_of : '' })} /></div>
+      </SheetPanel><SheetFooter className="flex justify-between"><Button variant="ghost" onClick={clearCohortFilters} disabled={!cohortFilterCount}>Clear filters</Button><Button onClick={() => setFiltersOpen(false)}>Show results</Button></SheetFooter></SheetPopup></Sheet>
 
       {optionsError && <div className="mb-4 rounded-lg border border-warning/30 bg-warning/8 px-4 py-3 text-sm text-warning-foreground" role="alert">Filter options could not be loaded: {optionsError} <Button size="xs" variant="ghost" onClick={() => setRetry((value) => value + 1)}>Retry</Button></div>}
       {exportError && <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive-foreground" role="alert">{exportError}</div>}

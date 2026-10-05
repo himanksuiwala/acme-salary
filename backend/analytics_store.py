@@ -60,14 +60,14 @@ def _bins(values):
 
 
 def snapshot(*, as_of: date, country=None, department=None, role=None, status=None,
-             location_id=None, reporting_currency=None, metric="base",
+             location_id=None, reporting_currency=None,
              period_from=None, period_to=None, include_ids=False, include_all_changes=False):
     if reporting_currency and reporting_currency.upper() != "USD":
         raise ValueError("Analytics reporting currency is fixed to USD")
     selected = as_of.isoformat()
     generated = datetime.now(timezone.utc).isoformat(timespec="seconds")
     filters = {"country": country, "department": department, "role": role, "status": status,
-               "location_id": location_id, "metric": metric,
+               "location_id": location_id,
                "period_from": (period_from or as_of.replace(day=1)).isoformat(),
                "period_to": (period_to or as_of).isoformat()}
     conditions = ["e.joining_date<=?", "(e.termination_date IS NULL OR e.termination_date>=?)"]
@@ -180,7 +180,7 @@ def snapshot(*, as_of: date, country=None, department=None, role=None, status=No
             groups = defaultdict(list)
             for row, record_values, record_reasons in decorated:
                 groups[(row[code_col] or "UNSPECIFIED", row[name_col] or "Not specified")].append(
-                    (record_values[metric], record_reasons[metric]))
+                    (record_values["base"], record_reasons["base"]))
             breakdowns[kind] = []
             for (key, label), group_values in sorted(groups.items(), key=lambda item: item[0][1]):
                 present = [value for value, _reason in group_values if value is not None]
@@ -225,7 +225,7 @@ def snapshot(*, as_of: date, country=None, department=None, role=None, status=No
                 "previous_decimal_places": change["previous_decimal_places"],
                 "previous_frequency": change["previous_frequency"],
                 "percentage": percentage})
-        selected_values = values[metric]
+        selected_values = values["base"]
         result = {
             "context": {"as_of": selected, "generated_at": generated, "filters": filters,
                 "population": "employed_as_of", "fx_reference_date": FX_REFERENCE_DATE,

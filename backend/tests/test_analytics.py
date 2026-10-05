@@ -68,6 +68,8 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(data["coverage"]["employee_count"], 3)
         self.assertEqual(data["metrics"]["base"]["sum"], 3400000)
         self.assertEqual(data["metrics"]["base"]["median"], 1700000)
+        self.assertNotIn("metric", data["context"]["filters"])
+        self.assertEqual(data["metrics"]["variable"]["included"], 1)
         self.assertEqual(data["coverage"]["no_package"], 1)
         self.assertEqual(sum(bin["count"] for bin in data["distribution"]), 2)
         self.assertEqual(request("/api/analytics/compensation", "as_of=2025-01-01")[1]["coverage"]["no_package"], 5)
@@ -111,6 +113,9 @@ class AnalyticsTests(unittest.TestCase):
     def test_dates_filters_and_export_audit(self):
         self.assertEqual(request("/api/analytics/compensation", "as_of=bad")[0], 422)
         self.assertEqual(request("/api/analytics/compensation", "reporting_currency=XXX")[0], 422)
+        self.assertEqual(request("/api/analytics/compensation", "metric=base")[0], 200)
+        self.assertEqual(request("/api/analytics/compensation", "metric=variable")[0], 422)
+        self.assertEqual(request("/api/analytics/compensation/export", "metric=target")[0], 422)
         self.assertEqual(request("/api/analytics/compensation", "period_from=2026-10-06&period_to=2026-10-05")[0], 422)
         status, csv_data = request("/api/analytics/compensation/export",
                                    "as_of=2026-10-05&country=US", raw=True)
@@ -119,6 +124,7 @@ class AnalyticsTests(unittest.TestCase):
         self.assertIn("2026-10-05", csv_data)
         self.assertIn("3400000", csv_data)
         self.assertIn("FX reference date,2026-09-25", csv_data)
+        self.assertNotIn("Filter metric", csv_data)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM audit_log WHERE action='EXPORT_COMPLETED' AND entity_type='export'").fetchone()[0], 1)
 
     def test_directory_drilldown_uses_selected_date_and_employment(self):

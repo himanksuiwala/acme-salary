@@ -9,7 +9,6 @@ export type AnalyticsQuery = {
   role: string
   status: string
   location_id: string
-  metric: Metric
   period_from: string
   period_to: string
 }

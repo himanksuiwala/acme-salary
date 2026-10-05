@@ -7,6 +7,7 @@ import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { Badge } from '@/components/ui/badge'
+import { ContextInfo } from '@/components/product/ContextInfo'
 import { DatePicker } from '@/components/product/DatePicker'
 import { DateRangePicker } from '@/components/product/DateRangePicker'
 import { Button } from '@/components/ui/button'
@@ -19,21 +20,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tooltip as Hint, TooltipPopup, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDate, formatMoney } from '@/features/employees/format'
 import type { Currency, DirectoryOptions } from '@/features/employees/api'
-import type { AnalyticsQuery, AnalyticsResult, Group, Metric } from './api'
+import type { AnalyticsQuery, AnalyticsResult, Group } from './api'
 import { downloadAnalytics, getAnalytics, getAnalyticsOptions } from './api'
 
-const metricNames: Record<Metric, string> = {
-  base: 'Annualized base salary',
-  variable: 'Target variable pay',
-  allowances: 'Annualized allowances',
-  target: 'Indicative target compensation',
-}
-const metricDescriptions: Record<Metric, string> = {
-  base: 'Annual or monthly base × 12. Hourly pay is excluded.',
-  variable: 'Target amount in the package frequency, annualized where possible. Not actual bonus paid.',
-  allowances: 'Annual allowances plus monthly allowances × 12. Hourly allowances are excluded.',
-  target: 'Annualized base, target variable and allowances where every component can be normalized.',
-}
+const chartMetricName = 'Annualized base salary'
 type GroupKind = 'country' | 'department' | 'role'
 const groupNames: Record<GroupKind, string> = { country: 'Country', department: 'Department', role: 'Role' }
 
@@ -49,7 +39,7 @@ function displayRate(value: string) { return Number(value).toPrecision(10).repla
 function FilterSelect({ label, value, values, onChange }: {
   label: string; value: string; values: { value: string; label: string }[]; onChange: (value: string) => void
 }) {
-  const emptyLabel = `All ${label.toLowerCase()}`
+  const emptyLabel = ({ Country: 'All countries', Department: 'All departments', Role: 'All roles', Status: 'All statuses', Location: 'All locations' } as Record<string, string>)[label] ?? 'All'
   return <div className="min-w-0">
     <span className="mb-1.5 block text-[13px] font-medium text-muted-foreground">{label}</span>
     <Select value={value || 'all'} onValueChange={(next) => onChange(next === 'all' ? '' : String(next))}>
@@ -59,17 +49,18 @@ function FilterSelect({ label, value, values, onChange }: {
   </div>
 }
 
-function Methodology({ open, onOpenChange, data, metric }: {
-  open: boolean; onOpenChange: (value: boolean) => void; data: AnalyticsResult; metric: Metric
+function Methodology({ open, onOpenChange, data }: {
+  open: boolean; onOpenChange: (value: boolean) => void; data: AnalyticsResult
 }) {
-  const reasons = data.metrics[metric].exclusion_reasons
+  const base = data.metrics.base
+  const reasons = base.exclusion_reasons
   return <Sheet open={open} onOpenChange={onOpenChange}>
     <SheetPopup aria-label="Analytics methodology" className="sm:max-w-xl">
       <SheetHeader><SheetTitle>Methodology and FX notes</SheetTitle></SheetHeader>
       <SheetPanel className="space-y-6 text-sm leading-6">
         <section><h3 className="font-semibold">Population and date</h3><p className="mt-1 text-muted-foreground">Employed on {labelDate(data.context.as_of)} UTC: joined on or before this date and not terminated before it. Current status filters narrow this group. Country, department, role and location reflect attributes stored now, including for historical dates. Separate rehire spells cannot be reconstructed.</p></section>
-        <section><h3 className="font-semibold">{metricNames[metric]}</h3><p className="mt-1 text-muted-foreground">{metricDescriptions[metric]} These are contractual commitments or targets, never cash paid. Mean is the sum divided by included employees; median is the middle value or average of the two middle values.</p></section>
-        <section><h3 className="font-semibold">Coverage and exclusions</h3><p className="mt-1 text-muted-foreground">{count(data.metrics[metric].included)} included of {count(data.coverage.employee_count)} employees; {count(data.metrics[metric].excluded)} excluded.</p>
+        <section><h3 className="font-semibold">{chartMetricName}</h3><p className="mt-1 text-muted-foreground">Annual or monthly base × 12. Hourly pay is excluded. These are contractual commitments, never cash paid. Mean is the sum divided by included employees; median is the middle value or average of the two middle values.</p></section>
+        <section><h3 className="font-semibold">Coverage and exclusions</h3><p className="mt-1 text-muted-foreground">{count(base.included)} included of {count(data.coverage.employee_count)} employees; {count(base.excluded)} excluded.</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground">{Object.entries(reasons).filter(([, value]) => value > 0).map(([reason, value]) => <li key={reason}>{reason.replaceAll('_', ' ')}: {count(value)}</li>)}</ul>
         </section>
         <section><h3 className="font-semibold">Currency conversion</h3><p className="mt-1 text-muted-foreground">Analytics use USD. Amounts are annualized in their source currency, then converted with the fixed {labelDate(data.context.fx_reference_date)} reference-rate set ({data.context.fx_reference_source}), regardless of the selected as-of date. Rates express one source major unit in USD; results round to USD cents. USD records need no conversion.</p>
@@ -116,7 +107,6 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
   const data = loading ? null : load.data
   const error = loading ? null : load.error
   const [methodologyOpen, setMethodologyOpen] = useState(false)
-  const [introOpen, setIntroOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [groupKind, setGroupKind] = useState<GroupKind>('country')
   const [exporting, setExporting] = useState(false)
@@ -140,7 +130,7 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
   }, [query, requestKey])
 
   function update(patch: Partial<AnalyticsQuery>) { onQueryChange(patch) }
-  function clear() { update({ country: '', department: '', role: '', status: '', location_id: '', metric: 'base' }) }
+  function clear() { update({ country: '', department: '', role: '', status: '', location_id: '' }) }
   function clearCohort() { update({ country: '', department: '', role: '', status: '', location_id: '' }) }
   async function exportData() {
     setExportError(null); setExporting(true)
@@ -149,7 +139,7 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
     finally { setExporting(false) }
   }
   const currency = data?.context.reporting_currency ?? null
-  const selected = data?.metrics[query.metric]
+  const selected = data?.metrics.base
   const total = data?.coverage.employee_count ?? 0
   const series = data?.distribution.map((bin) => ({
     label: `${money(bin.lower, currency, '')}–${money(bin.upper, currency, '')}`,
@@ -167,7 +157,7 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
 
   return <div className="mx-auto w-full max-w-[1440px] space-y-6 px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
     <header className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-      <div><p className="text-[13px] text-muted-foreground">Workspace / Analytics</p><div className="mt-1 flex items-center gap-1.5"><h1 className="text-[28px] font-semibold leading-9 tracking-tight">Compensation analytics</h1><Popover open={introOpen} onOpenChange={setIntroOpen}><PopoverTrigger render={<Button type="button" size="icon-sm" variant="ghost" className="shrink-0" aria-label="About compensation analytics" onPointerEnter={(event) => { if (event.pointerType === 'mouse') setIntroOpen(true) }} onPointerLeave={(event) => { if (event.pointerType === 'mouse') setIntroOpen(false) }} />}><InfoIcon aria-hidden="true" size={17} /></PopoverTrigger><PopoverPopup tooltipStyle side="bottom" align="start" className="max-w-80 leading-5" aria-label="About this analytics screen">Annualized compensation commitments, distribution and cohort breakdowns as of {labelDate(query.as_of)} UTC. Figures are not actual cash paid.</PopoverPopup></Popover></div></div>
+      <div><p className="text-[13px] text-muted-foreground">Workspace / Analytics</p><div className="mt-1 flex items-center gap-1.5"><h1 className="text-[28px] font-semibold leading-9 tracking-tight">Compensation analytics</h1><ContextInfo label="About compensation analytics">Annualized compensation commitments, distribution and cohort breakdowns as of {labelDate(query.as_of)} UTC. Figures are not actual cash paid.</ContextInfo></div></div>
       <div className="grid w-full grid-cols-1 gap-2 justify-self-end min-[380px]:grid-cols-2 sm:w-auto xl:flex xl:flex-wrap xl:justify-end">
         <Button variant="outline" className="w-full min-[380px]:col-span-2 xl:w-auto" onClick={() => setMethodologyOpen(true)} disabled={!data}><InfoIcon aria-hidden="true" />Methodology &amp; FX Notes</Button>
         <Button variant="outline" className="w-full xl:w-auto" onClick={exportData} loading={exporting} disabled={!data || !total}><DownloadSimpleIcon aria-hidden="true" />Export snapshot</Button>
@@ -177,7 +167,7 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
     <section aria-label="Analytics filters" className="rounded-xl border bg-card p-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-44 flex-1 sm:max-w-64"><label htmlFor="analytics-as-of" className="mb-1.5 block text-[13px] font-medium text-muted-foreground">As of (UTC)</label><DatePicker id="analytics-as-of" label="As of (UTC)" value={query.as_of} onChange={(value) => { if (value) update({ as_of: value, period_to: value, period_from: value.slice(0, 7) + '-01' }) }} /></div>
-        <div className="min-w-52 flex-[2] sm:max-w-80"><span className="mb-1.5 block text-[13px] font-medium text-muted-foreground">Metric for chart and groups</span><Select value={query.metric} onValueChange={(value) => update({ metric: value as Metric })}><SelectTrigger aria-label="Metric" className="w-full"><SelectValue>{metricNames[query.metric]}</SelectValue></SelectTrigger><SelectPopup>{(Object.keys(metricNames) as Metric[]).map((key) => <SelectItem key={key} value={key}>{metricNames[key]}</SelectItem>)}</SelectPopup></Select></div>
+        <div className="min-w-52 flex-[2] sm:max-w-80"><span className="mb-1.5 block text-[13px] font-medium text-muted-foreground">Metric for chart and groups</span><p className="flex min-h-9 items-center rounded-lg bg-muted px-3 text-sm font-medium">Annualized Base Salary</p></div>
         <Button variant="outline" onClick={() => setFiltersOpen(true)}><SlidersHorizontalIcon aria-hidden="true" />Filters{appliedFilters.length ? ` (${appliedFilters.length})` : ''}</Button>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3 text-[13px] text-muted-foreground"><span>{data ? `${count(total)} employees · ` : ''}Reporting currency: USD</span>{appliedFilters.map((item) => <Button key={item.key} size="xs" variant="outline" className="max-w-full" aria-label={`Remove ${item.label} filter`} onClick={() => update({ [item.key]: '' })}><span className="max-w-44 truncate">{item.label}: {item.display}</span>×</Button>)}{appliedFilters.length > 0 && <Button size="xs" variant="ghost" onClick={clearCohort}>Clear all</Button>}</div>
@@ -193,7 +183,7 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
     {exportError && <p role="alert" className="text-sm text-destructive-foreground">{exportError}</p>}
     {loading ? <div className="space-y-5" aria-label="Loading analytics"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-36" />)}</div><Skeleton className="h-80" /><Skeleton className="h-64" /></div> : error ? <div role="alert" className="rounded-xl border bg-card p-8"><h2 className="text-lg font-semibold">Couldn’t load analytics</h2><p className="mt-2 text-sm text-muted-foreground">{error}</p><Button className="mt-4" variant="outline" onClick={() => setRetry((value) => value + 1)}><ArrowClockwiseIcon aria-hidden="true" />Try again</Button></div> : !data ? null : total === 0 ? <Empty className="rounded-xl border bg-card"><EmptyHeader><EmptyTitle>No employees in this cohort</EmptyTitle><EmptyDescription>Change the date or filters to include employees employed on that date.</EmptyDescription></EmptyHeader><Button variant="outline" onClick={clear}>Clear filters</Button></Empty> : <>
       {selected?.partial && <div role="status" aria-live="polite" className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm text-warning-foreground">
-        <WarningCircleIcon aria-hidden="true" className="mt-0.5 shrink-0" /><p>Partial {metricNames[query.metric].toLowerCase()}: {count(selected.excluded)} of {count(total)} employees excluded. Hover or focus a Partial badge for reasons.</p>
+        <WarningCircleIcon aria-hidden="true" className="mt-0.5 shrink-0" /><p>Partial annualized base salary: {count(selected.excluded)} of {count(total)} employees excluded. Hover or focus a Partial badge for reasons.</p>
       </div>}
       <section aria-label="Summary metrics" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard title="Estimated annual base spend" value={money(data.metrics.base.sum, currency)} detail={`${count(data.metrics.base.included)} included · ${count(data.metrics.base.excluded)} excluded · ${labelDate(query.as_of)} UTC`} partial={data.metrics.base.partial} reasons={data.metrics.base.exclusion_reasons} />
@@ -202,24 +192,24 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
         <MetricCard title="Target variable pool" value={money(data.metrics.variable.sum, currency)} detail={`${count(data.metrics.variable.included)} included · target, not paid bonus`} partial={data.metrics.variable.partial} reasons={data.metrics.variable.exclusion_reasons} />
       </section>
       <section aria-labelledby="distribution-title" className="rounded-xl border bg-card p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4"><div><h2 id="distribution-title" className="text-lg font-semibold">{metricNames[query.metric]} distribution</h2><p className="mt-1 text-[13px] text-muted-foreground">USD · {labelDate(query.as_of)} UTC · {count(selected?.included ?? 0)} employees included</p></div><div className="flex flex-wrap items-center gap-2"><Badge variant="outline"><ChartBarIcon aria-hidden="true" />Chart and exact values</Badge><Button variant="outline" size="sm" onClick={() => onViewEmployees()}>View employees <ArrowRightIcon aria-hidden="true" /></Button></div></div>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4"><div><h2 id="distribution-title" className="text-lg font-semibold">{chartMetricName} distribution</h2><p className="mt-1 text-[13px] text-muted-foreground">USD · {labelDate(query.as_of)} UTC · {count(selected?.included ?? 0)} employees included</p></div><div className="flex flex-wrap items-center gap-2"><Badge variant="outline"><ChartBarIcon aria-hidden="true" />Chart and exact values</Badge><Button variant="outline" size="sm" onClick={() => onViewEmployees()}>View employees <ArrowRightIcon aria-hidden="true" /></Button></div></div>
         {!series.length ? <div className="py-12 text-center text-sm text-muted-foreground">No comparable salary values for this cohort. Review exclusions with the Partial badge.</div> : <>
-          <div role="img" aria-label={`Distribution of ${metricNames[query.metric].toLowerCase()} for ${selected?.included} employees; exact bin values follow in the table`} className="mt-5 h-64 w-full">
+          <div role="img" aria-label={`Distribution of annualized base salary for ${selected?.included} employees; exact bin values follow in the table`} className="mt-5 h-64 w-full">
             <ResponsiveContainer width="100%" height="100%"><BarChart data={series} accessibilityLayer margin={{ top: 12, right: 10, bottom: 8, left: 0 }}><CartesianGrid vertical={false} stroke="var(--border)" /><XAxis dataKey="short" tickLine={false} axisLine={false} fontSize={11} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={11} /><Tooltip formatter={(value) => [count(Number(value)), 'Employees']} labelFormatter={(_label, payload) => payload?.[0]?.payload?.label ?? ''} /><Bar dataKey="count" fill="var(--color-neutral-500)" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer>
           </div>
           <div className="mt-5"><h3 className="mb-2 text-sm font-semibold">Exact distribution values</h3><Table aria-label="Salary distribution bins"><TableHeader><TableRow><TableHead>From</TableHead><TableHead>Through (inclusive)</TableHead><TableHead className="text-right">Employees</TableHead></TableRow></TableHeader><TableBody>{data.distribution.map((bin) => <TableRow key={bin.lower}><TableCell className="tabular-nums">{money(bin.lower, currency, '')}</TableCell><TableCell className="tabular-nums">{money(bin.upper, currency, '')}</TableCell><TableCell className="text-right tabular-nums">{count(bin.count)}</TableCell></TableRow>)}</TableBody></Table></div>
         </>}
       </section>
       <section aria-labelledby="breakdown-title" className="rounded-xl border bg-card p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4"><div><h2 id="breakdown-title" className="text-lg font-semibold">Compensation breakdown</h2><p className="mt-1 text-[13px] text-muted-foreground">{metricNames[query.metric]} · USD</p></div><div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">{(Object.keys(groupNames) as GroupKind[]).map((kind) => <Button key={kind} variant={groupKind === kind ? 'outline' : 'ghost'} size="sm" aria-pressed={groupKind === kind} onClick={() => setGroupKind(kind)}>{groupNames[kind]}</Button>)}</div></div>
-        <Table aria-label={`${groupNames[groupKind]} compensation breakdown`} className="mt-3 min-w-[780px]"><TableHeader><TableRow><TableHead className="sticky left-0 z-10 bg-card">{groupNames[groupKind]}</TableHead><TableHead className="text-right">Employees</TableHead><TableHead className="text-right">Included</TableHead><TableHead className="text-right">Excluded</TableHead><TableHead className="text-right">Annual sum</TableHead><TableHead className="text-right">Average</TableHead><TableHead className="text-right">Median</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{data.breakdowns[groupKind].map((group) => <TableRow key={group.key}><TableCell className="sticky left-0 z-10 bg-card font-medium">{group.label}{group.partial && <span className="ml-2 inline-flex"><PartialBadge reasons={group.exclusion_reasons} label={`${group.label} ${metricNames[query.metric]}`} /></span>}</TableCell><TableCell className="text-right tabular-nums">{count(group.employee_count)}</TableCell><TableCell className="text-right tabular-nums">{count(group.included)}</TableCell><TableCell className="text-right tabular-nums">{count(group.excluded)}</TableCell><TableCell className="text-right tabular-nums">{money(group.sum, currency)}</TableCell><TableCell className="text-right tabular-nums">{money(group.average, currency)}</TableCell><TableCell className="text-right tabular-nums">{money(group.median, currency)}</TableCell><TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => onViewEmployees(groupKind, group)}>View employees <ArrowRightIcon aria-hidden="true" /></Button></TableCell></TableRow>)}</TableBody></Table>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4"><div><h2 id="breakdown-title" className="text-lg font-semibold">Compensation breakdown</h2><p className="mt-1 text-[13px] text-muted-foreground">{chartMetricName} · USD</p></div><div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">{(Object.keys(groupNames) as GroupKind[]).map((kind) => <Button key={kind} variant={groupKind === kind ? 'outline' : 'ghost'} size="sm" aria-pressed={groupKind === kind} onClick={() => setGroupKind(kind)}>{groupNames[kind]}</Button>)}</div></div>
+        <Table aria-label={`${groupNames[groupKind]} compensation breakdown`} className="mt-3 min-w-[780px]"><TableHeader><TableRow><TableHead className="sticky left-0 z-10 bg-card">{groupNames[groupKind]}</TableHead><TableHead className="text-right">Employees</TableHead><TableHead className="text-right">Included</TableHead><TableHead className="text-right">Excluded</TableHead><TableHead className="text-right">Annual sum</TableHead><TableHead className="text-right">Average</TableHead><TableHead className="text-right">Median</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>{data.breakdowns[groupKind].map((group) => <TableRow key={group.key}><TableCell className="sticky left-0 z-10 bg-card font-medium">{group.label}{group.partial && <span className="ml-2 inline-flex"><PartialBadge reasons={group.exclusion_reasons} label={`${group.label} ${chartMetricName}`} /></span>}</TableCell><TableCell className="text-right tabular-nums">{count(group.employee_count)}</TableCell><TableCell className="text-right tabular-nums">{count(group.included)}</TableCell><TableCell className="text-right tabular-nums">{count(group.excluded)}</TableCell><TableCell className="text-right tabular-nums">{money(group.sum, currency)}</TableCell><TableCell className="text-right tabular-nums">{money(group.average, currency)}</TableCell><TableCell className="text-right tabular-nums">{money(group.median, currency)}</TableCell><TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => onViewEmployees(groupKind, group)}>View employees <ArrowRightIcon aria-hidden="true" /></Button></TableCell></TableRow>)}</TableBody></Table>
       </section>
       <section aria-labelledby="changes-title" className="rounded-xl border bg-card p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4"><div><h2 id="changes-title" className="text-lg font-semibold">Compensation changes</h2><p className="mt-1 text-[13px] text-muted-foreground">Recorded package starts in the selected UTC period · {count(data.changes.count)} changes</p></div><DateRangePicker label="Changes date range (UTC)" value={{ from: query.period_from, to: query.period_to }} max={query.as_of} required onChange={({ from, to }) => update({ period_from: from, period_to: to })} /></div>
         {!data.changes.items.length ? <p className="py-8 text-center text-sm text-muted-foreground">No package starts in this period.</p> : <Table aria-label="Compensation changes" className="mt-3 min-w-[700px]"><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Effective date</TableHead><TableHead className="text-right">Previous base</TableHead><TableHead className="text-right">New base</TableHead><TableHead className="text-right">Change</TableHead></TableRow></TableHeader><TableBody>{data.changes.items.map((change, index) => { const valueCurrency = options?.currencies.find((item) => item.code === change.currency_code) ?? { code: change.currency_code, name: change.currency_code, symbol: null, decimal_places: change.decimal_places }; const previousCurrency = change.previous_currency ? options?.currencies.find((item) => item.code === change.previous_currency) ?? { code: change.previous_currency, name: change.previous_currency, symbol: null, decimal_places: change.previous_decimal_places ?? 2 } : null; return <TableRow key={`${change.employee_id}-${change.effective_from}-${index}`}><TableCell>{change.employee_name}<span className="block text-xs text-muted-foreground">{change.employee_code}</span></TableCell><TableCell>{labelDate(change.effective_from)}</TableCell><TableCell className="text-right tabular-nums">{change.previous_base === null ? 'First package' : money(change.previous_base, previousCurrency, change.previous_frequency ?? '')}</TableCell><TableCell className="text-right tabular-nums">{money(change.base_pay, valueCurrency, change.pay_frequency)}</TableCell><TableCell className="text-right tabular-nums">{change.percentage === null ? 'Not comparable' : `${change.percentage > 0 ? '+' : ''}${change.percentage}%`}</TableCell></TableRow> })}</TableBody></Table>}
         {data.changes.count > data.changes.items.length && <p className="mt-3 text-[13px] text-muted-foreground">Showing the newest {data.changes.items.length} changes. Export the snapshot for the full selected period.</p>}
       </section>
-      <Methodology open={methodologyOpen} onOpenChange={setMethodologyOpen} data={data} metric={query.metric} />
+      <Methodology open={methodologyOpen} onOpenChange={setMethodologyOpen} data={data} />
     </>}
   </div>
 }

@@ -8,14 +8,14 @@ from typing import Annotated
 from backend.analytics_store import export_snapshot, snapshot
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
-Metric = Literal["base", "variable", "allowances", "target"]
 
 
 def query_args(
     as_of: date | None = None, country: str | None = None,
     department: str | None = None, role: str | None = None,
     status: str | None = None, location_id: int | None = Query(None, ge=1),
-    reporting_currency: str | None = None, metric: Metric = "base",
+    reporting_currency: str | None = None,
+    metric: Literal["base"] = Query("base", deprecated=True),
     period_from: date | None = None, period_to: date | None = None,
 ):
     selected = as_of or datetime.now(timezone.utc).date()
@@ -28,7 +28,7 @@ def query_args(
         raise HTTPException(422, "Analytics reporting currency is fixed to USD")
     return dict(as_of=selected, country=country, department=department, role=role,
                 status=status, location_id=location_id, reporting_currency=reporting_currency,
-                metric=metric, period_from=start, period_to=end)
+                period_from=start, period_to=end)
 
 
 AnalyticsQuery = Annotated[dict, Depends(query_args)]

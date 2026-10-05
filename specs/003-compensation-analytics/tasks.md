@@ -62,3 +62,16 @@ T001–003 before implementation. T005 before T006–007. T010 before T011–012
 - [x] T031 Remove native date controls from shared single/range pickers; keep Coss Calendar with validated plain-text ISO entry, bounds and required/clear behavior (FR-016).
 - [x] T032 Move analytics introduction to a title info overlay, and group methodology/export/directory actions at the header right across viewport sizes (FR-016).
 - [ ] T033 Verify build/lint, date control source inventory and interaction behavior; update verification and remaining tasks (FR-015/016, SC-004).
+
+## Phase 9: Employee directory consistency
+
+- [x] T034 Share a title info popover and move the Employees long header description into it (FR-017).
+- [x] T035 Keep directory search visible; move detailed filters into a Coss sheet and retain readable active chips, clear-all, result count, URL state, paging and export (FR-017).
+- [ ] T036 Verify build/lint/backend checks and inspect directory interactions at desktop/mobile widths; update verification (FR-017, SC-004).
+
+## Phase 10: Fixed annualized-base chart and groups
+
+- [x] T037 Update the spec/plan/API contract for a fixed annualized-base chart and breakdown, retaining independent summary metrics (FR-018).
+- [x] T038 Remove selectable metric UI and URL/client query state; show only Annualized base salary as chart/group context (FR-018).
+- [x] T039 Fix backend distribution and breakdown to base, reject non-base legacy query values and add focused contract coverage (FR-018).
+- [x] T040 Run backend/frontend checks, verify no selectable metric path remains and update verification (FR-018).

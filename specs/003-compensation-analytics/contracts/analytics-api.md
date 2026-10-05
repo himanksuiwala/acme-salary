@@ -2,14 +2,14 @@
 
 ## GET /api/analytics/compensation
 
-Query: `as_of=YYYY-MM-DD` (default today UTC), optional `country`, `department`, `role`, `status`, `location_id`, `metric` (base|variable|allowances|target), `period_from`, `period_to`. Reporting currency is always USD; an explicit non-USD `reporting_currency` request returns 422 for callers of the earlier contract. Invalid date, invalid metric or reversed period returns 422.
+Query: `as_of=YYYY-MM-DD` (default today UTC), optional `country`, `department`, `role`, `status`, `location_id`, `period_from`, `period_to`. Chart distribution and group breakdowns always use annualized base salary. A legacy `metric=base` request is accepted; any other metric returns 422. Reporting currency is always USD; an explicit non-USD `reporting_currency` request returns 422 for callers of the earlier contract. Invalid date or reversed period returns 422.
 
 Response 200 JSON:
 - `context`: `as_of`, `generated_at`, `filters`, `reporting_currency` USD currency object, `fx_reference_date`, `fx_reference_source`, `population: "employed_as_of"`.
 - `coverage`: `employee_count`, `base_included`, `no_package`, `hourly_base`, `missing_fx`, `missing_fx_currencies`, `rates` (source, target, rate, rate_date, source_name).
 - `metrics`: `base`, `variable`, `allowances`, `target` each `{sum, average, median, included, excluded, exclusion_reasons, partial}` in USD integer minor units. Amounts are null when no record qualifies.
-- `distribution`: array of `{lower, upper, count}` USD integer minor units, upper inclusive; empty when no value qualifies.
-- `breakdowns`: `{country, department, role}` arrays, each row `{key,label,employee_count,included,excluded,exclusion_reasons,sum,average,median,partial}` for the selected metric.
+- `distribution`: annualized-base array of `{lower, upper, count}` USD integer minor units, upper inclusive; empty when no value qualifies.
+- `breakdowns`: `{country, department, role}` arrays, each row `{key,label,employee_count,included,excluded,exclusion_reasons,sum,average,median,partial}` for annualized base salary.
 - `changes`: `{count,items}` with bounded most recent package starts: employee id/code/name, effective_from, prior/new base/currency/frequency, comparable percentage or null.
 
 No salary row list or user identity is returned. Local development only; no scope enforcement yet. The fixed approved Federal Reserve H.10 reference set dated 2026-09-25 applies regardless of compensation as-of date. Same-currency USD is identity. No-rate records are excluded and impacted money metrics are Partial. A Partial tooltip can use `exclusion_reasons` without fetching salary rows.

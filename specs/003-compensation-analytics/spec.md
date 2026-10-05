@@ -56,7 +56,7 @@ An HR user sees recorded package starts in a chosen period and exports the filte
 ### Functional Requirements
 
 - **FR-001**: Add Analytics navigation and a responsive screen with context/filters, status, metrics, distribution, breakdown, changes and methodology.
-- **FR-002**: Support UTC as-of date, country, department, role, status, location and metric controls; fix the analytics reporting currency to USD, keep context in the URL and allow clear filters.
+- **FR-002**: Support UTC as-of date and country, department, role, status and location controls; fix the analytics reporting currency to USD, keep context in the URL and allow clear filters. The chart and group metric is fixed to annualized base salary.
 - **FR-003**: Default population is employed as of selected date; show distinct employee and exclusion counts.
 - **FR-004**: Annualize annual and monthly effective base only; compute sum, mean and median on the same included values and count hourly/missing-package exclusions.
 - **FR-005**: Show target variable and allowances separately, normalize only valid components, and label all compensation amounts as commitments/targets, never cash paid.
@@ -68,9 +68,11 @@ An HR user sees recorded package starts in a chosen period and exports the filte
 - **FR-011**: Export a formula-safe CSV snapshot with metadata and audit trail.
 - **FR-012**: Provide loading, empty, partial, validation and service-error states with retry; controls remain keyboard operable and responsive.
 - **FR-013**: Keep the local-development and missing-authorization limitation explicit in technical documentation and API descriptions until real authentication, role and scope enforcement exists; avoid repetitive development notices in product UI.
-- **FR-014**: Put summary-card info controls beside their titles and omit a standalone complete-coverage callout. Show only as-of, metric and an advanced-filters action by default; retain applied cohort filters as removable chips and in the URL.
+- **FR-014**: Put summary-card info controls beside their titles and omit a standalone complete-coverage callout. Show as-of date, a fixed annualized-base label and an advanced-filters action by default; retain applied cohort filters as removable chips and in the URL.
 - **FR-015**: Use Coss Calendar and Popover date-picker composition for existing single-date and date-range controls across Analytics, Audit log and employee flows. Preserve ISO date API values, UTC labels, keyboard access, date bounds, clearing and form validation.
 - **FR-016**: A date control opens only the Coss calendar, with no browser-native date picker. Preserve typed date entry through plain text fields in the Coss popup, validate before applying, and keep the committed date unchanged while a draft is incomplete. Move the analytics header description into a title-adjacent info popover that can open by hover or tap; group the header actions together on the right, with responsive wrapping.
+- **FR-017**: Apply the same concise title and progressive-filter pattern to the Employees directory. Keep search visible; place cohort selectors in a Coss sheet, show removable applied filters and result count, preserve URL/query/paging behavior, and put the longer directory description behind a hover/tap info control.
+- **FR-018**: Remove the chart/group metric selector and its URL and dynamic backend selection paths. Distribution and country/department/role breakdowns always use annualized base salary. Continue returning other summary metrics needed by existing cards and exports; reject legacy non-base metric requests rather than silently presenting base data as another metric.
 
 ### Key Entities
 

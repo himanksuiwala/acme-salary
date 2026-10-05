@@ -15,7 +15,7 @@ const AnalyticsScreen = lazy(() => import('@/features/analytics/AnalyticsScreen'
 
 type LocationState = { query: DirectoryQuery; employeeId: number | null; compensationForm: boolean; audit: boolean; auditQuery: AuditQuery; analytics: boolean; analyticsQuery: AnalyticsQuery }
 
-const analyticsKeys = ['as_of', 'country', 'department', 'role', 'status', 'location_id', 'metric', 'period_from', 'period_to'] as const
+const analyticsKeys = ['as_of', 'country', 'department', 'role', 'status', 'location_id', 'period_from', 'period_to'] as const
 function todayUtc() { return new Date().toISOString().slice(0, 10) }
 
 function readLocation(): LocationState {
@@ -34,7 +34,6 @@ function readLocation(): LocationState {
     as_of: analyticsDate, country: params.get('analytics_country') ?? '',
     department: params.get('analytics_department') ?? '', role: params.get('analytics_role') ?? '',
     status: params.get('analytics_status') ?? '', location_id: params.get('analytics_location_id') ?? '',
-    metric: (['base', 'variable', 'allowances', 'target'].includes(params.get('analytics_metric') ?? '') ? params.get('analytics_metric') : 'base') as AnalyticsQuery['metric'],
     period_from: params.get('analytics_period_from') || `${analyticsDate.slice(0, 7)}-01`,
     period_to: params.get('analytics_period_to') || analyticsDate,
   }
