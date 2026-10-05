@@ -231,7 +231,7 @@ def get_directory_options() -> dict:
             "SELECT currency_code AS code, currency_name AS name, symbol, decimal_places FROM currency ORDER BY currency_code"
         ).fetchall()
         allowance_types = connection.execute(
-            "SELECT code, name FROM allowance_type ORDER BY name"
+            "SELECT code, name FROM allowance_type WHERE status='ACTIVE' ORDER BY name"
         ).fetchall()
     return {
         "countries": [dict(row) for row in countries],
@@ -545,7 +545,7 @@ def create_compensation(employee_id: int, payload: dict) -> dict:
             allowance_types = {}
             for allowance in payload["allowances"]:
                 row = connection.execute(
-                    "SELECT id FROM allowance_type WHERE upper(code) = upper(?)",
+                    "SELECT id FROM allowance_type WHERE upper(code) = upper(?) AND status='ACTIVE'",
                     (allowance["type_code"],),
                 ).fetchone()
                 if row is None:

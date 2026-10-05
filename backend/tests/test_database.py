@@ -50,7 +50,7 @@ class DatabaseSchemaTests(unittest.TestCase):
             )
         }
         self.assertEqual(tables, EXPECTED_TABLES)
-        self.assertEqual(self.connection.execute("PRAGMA user_version").fetchone()[0], 7)
+        self.assertEqual(self.connection.execute("PRAGMA user_version").fetchone()[0], 8)
         for table in EXPECTED_TABLES:
             columns = {row[1] for row in self.connection.execute(f"PRAGMA table_info({table})")}
             self.assertTrue({"created_at", "updated_at"} <= columns, table)
@@ -105,9 +105,9 @@ class DatabaseSchemaTests(unittest.TestCase):
         schema = schema.replace("password_hash TEXT NOT NULL,", "password_hash TEXT,\n    password TEXT,")
         schema = schema.replace("role TEXT NOT NULL CHECK (role IN ('ADMIN', 'HR'))",
                                 "role TEXT NOT NULL CHECK (role <> '')")
-        schema = schema.replace("CHECK (status IN ('ACTIVE', 'INACTIVE'))",
-                                "CHECK (role <> 'SYSTEM' OR password_hash IS NULL)")
-        schema = schema.replace("PRAGMA user_version = 7", "PRAGMA user_version = 6")
+        schema = schema.replace("    CHECK (status IN ('ACTIVE', 'INACTIVE'))\n);",
+                                "    CHECK (role <> 'SYSTEM' OR password_hash IS NULL)\n);")
+        schema = schema.replace("PRAGMA user_version = 8", "PRAGMA user_version = 6")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "legacy.db"
             with sqlite3.connect(path) as legacy:
@@ -121,7 +121,7 @@ class DatabaseSchemaTests(unittest.TestCase):
                 legacy.commit()
             initialize_database(path)
             with sqlite3.connect(path) as migrated:
-                self.assertEqual(migrated.execute("PRAGMA user_version").fetchone()[0], 7)
+                self.assertEqual(migrated.execute("PRAGMA user_version").fetchone()[0], 8)
                 self.assertNotIn("password", {row[1] for row in migrated.execute("PRAGMA table_info(app_user)")})
                 actors = migrated.execute("SELECT user_id,username,password_hash,role FROM app_user ORDER BY user_id").fetchall()
                 self.assertEqual([(row[0], row[1], row[3]) for row in actors],
@@ -130,6 +130,30 @@ class DatabaseSchemaTests(unittest.TestCase):
                 self.assertTrue(verify_password('legacy-admin-password', actors[1][2]))
                 self.assertEqual(migrated.execute("SELECT user_id FROM audit_log").fetchone()[0], 2)
                 self.assertEqual(migrated.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_version_seven_adds_allowance_lifecycle_without_data_loss(self) -> None:
+        schema = SCHEMA_PATH.read_text()
+        schema = schema.replace(
+            "    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')),\n",
+            "",
+        ).replace(
+            "CREATE UNIQUE INDEX allowance_type_code_ci_idx ON allowance_type(upper(code));\n",
+            "",
+        ).replace("PRAGMA user_version = 8", "PRAGMA user_version = 7")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.db"
+            with sqlite3.connect(path) as legacy:
+                legacy.executescript(schema)
+                legacy.execute("INSERT INTO allowance_type(code,name) VALUES('MEAL','Meal')")
+                legacy.commit()
+            initialize_database(path)
+            with sqlite3.connect(path) as migrated:
+                self.assertEqual(migrated.execute("PRAGMA user_version").fetchone()[0], 8)
+                self.assertEqual(migrated.execute(
+                    "SELECT code,name,status FROM allowance_type"
+                ).fetchone(), ("MEAL", "Meal", "ACTIVE"))
+                with self.assertRaises(sqlite3.IntegrityError):
+                    migrated.execute("INSERT INTO allowance_type(code,name) VALUES('meal','Duplicate')")
 
     def test_foreign_keys_and_compensation_periods_are_enforced(self) -> None:
         self.assertEqual(self.connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)

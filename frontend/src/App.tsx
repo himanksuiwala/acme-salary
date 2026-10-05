@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { CaretLeftIcon, CaretRightIcon, ChartBarIcon, ClockCounterClockwiseIcon, ListIcon, SignOutIcon, UsersThreeIcon } from '@phosphor-icons/react'
+import { ArchiveIcon, BuildingsIcon, CaretLeftIcon, CaretRightIcon, ChartBarIcon, ClockCounterClockwiseIcon, CurrencyDollarIcon, ListIcon, SignOutIcon, UsersThreeIcon } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetPopup, SheetTitle } from '@/components/ui/sheet'
 import { EmployeeDirectory } from '@/features/employees/EmployeeDirectory'
@@ -14,13 +14,17 @@ import { LoginScreen } from '@/features/auth/LoginScreen'
 import { getCurrentUser, type AuthenticatedUser } from '@/features/auth/api'
 import { accessToken, rememberAccessToken } from '@/lib/api'
 import { roleLabel } from '@/features/employees/format'
+import { AdministrationScreen, type AdminSection } from '@/features/admin/AdministrationScreen'
 
 const AnalyticsScreen = lazy(() => import('@/features/analytics/AnalyticsScreen').then((module) => ({ default: module.AnalyticsScreen })))
 
-type LocationState = { query: DirectoryQuery; employeeId: number | null; compensationForm: boolean; audit: boolean; auditQuery: AuditQuery; analytics: boolean; analyticsQuery: AnalyticsQuery }
+type LocationState = { query: DirectoryQuery; employeeId: number | null; compensationForm: boolean; audit: boolean; auditQuery: AuditQuery; analytics: boolean; analyticsQuery: AnalyticsQuery; administration: boolean; adminSection: AdminSection }
 
 const analyticsKeys = ['as_of', 'country', 'department', 'role', 'status', 'location_id', 'period_from', 'period_to'] as const
 function todayUtc() { return new Date().toISOString().slice(0, 10) }
+function sectionsLabel(section: AdminSection) {
+  return section === 'allowances' ? 'Compensation setup' : section === 'currencies' ? 'Currencies & FX' : 'Organization'
+}
 
 function readLocation(): LocationState {
   const params = new URLSearchParams(window.location.search)
@@ -41,9 +45,12 @@ function readLocation(): LocationState {
     period_from: params.get('analytics_period_from') || `${analyticsDate.slice(0, 7)}-01`,
     period_to: params.get('analytics_period_to') || analyticsDate,
   }
+  const requestedAdminSection = params.get('admin_section')
+  const adminSection: AdminSection = requestedAdminSection === 'allowances' || requestedAdminSection === 'currencies' ? requestedAdminSection : 'organization'
   return {
     audit: params.get('view') === 'audit',
     analytics: params.get('view') === 'analytics', analyticsQuery,
+    administration: params.get('view') === 'administration', adminSection,
     auditQuery,
     query: {
       search: params.get('search') ?? '',
@@ -65,7 +72,7 @@ function readLocation(): LocationState {
 
 function writeLocation(state: LocationState, replace = false) {
   const params = new URLSearchParams()
-  const { query, employeeId, compensationForm, audit, auditQuery, analytics, analyticsQuery } = state
+  const { query, employeeId, compensationForm, audit, auditQuery, analytics, analyticsQuery, administration, adminSection } = state
   for (const key of ['search', 'country', 'department', 'role', 'package_state', 'as_of', 'location_id', 'employed_as_of'] as const) {
     if (query[key]) params.set(key, query[key])
   }
@@ -76,6 +83,7 @@ function writeLocation(state: LocationState, replace = false) {
   if (employeeId && compensationForm) params.set('view', 'new-package')
   if (audit) params.set('view', 'audit')
   if (analytics) params.set('view', 'analytics')
+  if (administration) { params.set('view', 'administration'); params.set('admin_section', adminSection) }
   for (const key of auditFilterKeys) if (auditQuery[key]) params.set(`audit_${key}`, auditQuery[key])
   if (auditQuery.page > 1) params.set('audit_page', String(auditQuery.page))
   if (auditQuery.page_size !== 20) params.set('audit_page_size', String(auditQuery.page_size))
@@ -115,14 +123,14 @@ function UserCard({ user, onLogout, collapsed = false }: { user: AuthenticatedUs
   </div>
 }
 
-function NavContents({ onEmployees, onAnalytics, onAudit, audit, analytics, user, onLogout, collapsed = false, onToggle }: { onEmployees: () => void; onAnalytics: () => void; onAudit: () => void; audit: boolean; analytics: boolean; user: AuthenticatedUser; onLogout: () => void; collapsed?: boolean; onToggle?: () => void }) {
+function NavContents({ onEmployees, onAnalytics, onAudit, onAdministration, audit, analytics, administration, adminSection, user, onLogout, collapsed = false, onToggle }: { onEmployees: () => void; onAnalytics: () => void; onAudit: () => void; onAdministration: (section: AdminSection) => void; audit: boolean; analytics: boolean; administration: boolean; adminSection: AdminSection; user: AuthenticatedUser; onLogout: () => void; collapsed?: boolean; onToggle?: () => void }) {
   const navClass = (selected: boolean) => `flex w-full items-center rounded-lg py-2.5 text-sm font-medium hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${collapsed ? 'justify-center px-2' : 'gap-3 px-3 text-left'} ${selected ? 'bg-neutral-100 text-foreground' : 'text-muted-foreground'}`
   return (
     <>
       <Brand collapsed={collapsed} onToggle={onToggle} />
       <nav aria-label="Main navigation" className={`flex-1 pt-5 ${collapsed ? 'px-2' : 'px-3'}`}>
         <p className={collapsed ? 'sr-only' : 'px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground'}>Workspace</p>
-        <button type="button" title={collapsed ? 'Employees' : undefined} aria-current={!audit && !analytics ? 'page' : undefined} onClick={onEmployees} className={navClass(!audit && !analytics)}>
+        <button type="button" title={collapsed ? 'Employees' : undefined} aria-current={!audit && !analytics && !administration ? 'page' : undefined} onClick={onEmployees} className={navClass(!audit && !analytics && !administration)}>
           <UsersThreeIcon size={19} weight="fill" aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Employees</span>
         </button>
         <button type="button" title={collapsed ? 'Analytics' : undefined} aria-current={analytics ? 'page' : undefined} onClick={onAnalytics} className={navClass(analytics)}>
@@ -131,6 +139,15 @@ function NavContents({ onEmployees, onAnalytics, onAudit, audit, analytics, user
         <p className={collapsed ? 'sr-only' : 'px-3 pb-2 pt-7 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground'}>Administration</p>
         <button type="button" title={collapsed ? 'Audit log' : undefined} aria-current={audit ? 'page' : undefined} onClick={onAudit} className={`${navClass(audit)} ${collapsed ? 'mt-7' : ''}`}>
           <ClockCounterClockwiseIcon size={19} weight={audit ? 'fill' : 'regular'} aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Audit log</span>
+        </button>
+        <button type="button" title={collapsed ? 'Organization' : undefined} aria-current={administration && adminSection === 'organization' ? 'page' : undefined} onClick={() => onAdministration('organization')} className={navClass(administration && adminSection === 'organization')}>
+          <BuildingsIcon size={19} weight={administration && adminSection === 'organization' ? 'fill' : 'regular'} aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Organization</span>
+        </button>
+        <button type="button" title={collapsed ? 'Compensation setup' : undefined} aria-current={administration && adminSection === 'allowances' ? 'page' : undefined} onClick={() => onAdministration('allowances')} className={navClass(administration && adminSection === 'allowances')}>
+          <ArchiveIcon size={19} weight={administration && adminSection === 'allowances' ? 'fill' : 'regular'} aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Compensation setup</span>
+        </button>
+        <button type="button" title={collapsed ? 'Currencies & FX' : undefined} aria-current={administration && adminSection === 'currencies' ? 'page' : undefined} onClick={() => onAdministration('currencies')} className={navClass(administration && adminSection === 'currencies')}>
+          <CurrencyDollarIcon size={19} weight={administration && adminSection === 'currencies' ? 'fill' : 'regular'} aria-hidden="true" /><span className={collapsed ? 'sr-only' : undefined}>Currencies & FX</span>
         </button>
       </nav>
       <UserCard user={user} onLogout={onLogout} collapsed={collapsed} />
@@ -194,7 +211,7 @@ function App() {
     const previous = locationRef.current
     const filterChanged = Object.keys(patch).some((key) => key !== 'page' && previous.query[key as keyof DirectoryQuery] !== patch[key as keyof DirectoryQuery])
     const next: LocationState = {
-      ...previous, audit: false, analytics: false,
+      ...previous, audit: false, analytics: false, administration: false,
       query: { ...previous.query, ...patch, page: patch.page ?? (filterChanged ? 1 : previous.query.page) },
       employeeId: null,
       compensationForm: false,
@@ -207,7 +224,7 @@ function App() {
   const openEmployee = useCallback((employeeId: number) => {
     if (!canLeaveForm()) return
     setSavedPackageId(null)
-    const next = { ...locationRef.current, employeeId, compensationForm: false, audit: false, analytics: false }
+    const next = { ...locationRef.current, employeeId, compensationForm: false, audit: false, analytics: false, administration: false }
     locationRef.current = next
     setLocation(next)
     writeLocation(next)
@@ -218,8 +235,8 @@ function App() {
     if (!canLeaveForm()) return
     setNavOpen(false)
     setSavedPackageId(null)
-    if (locationRef.current.employeeId === null && !locationRef.current.audit && !locationRef.current.analytics) return
-    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: false, analytics: false }
+    if (locationRef.current.employeeId === null && !locationRef.current.audit && !locationRef.current.analytics && !locationRef.current.administration) return
+    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: false, analytics: false, administration: false }
     locationRef.current = next
     setLocation(next)
     writeLocation(next)
@@ -230,14 +247,14 @@ function App() {
     if (!canLeaveForm()) return
     setNavOpen(false)
     const previous = locationRef.current
-    const next = { ...previous, employeeId: null, compensationForm: false, audit: true, analytics: false,
+    const next = { ...previous, employeeId: null, compensationForm: false, audit: true, analytics: false, administration: false,
       auditQuery: { ...previous.auditQuery, employee_id: '', page: 1 } }
     locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
   }, [canLeaveForm])
 
   const openEmployeeAudit = useCallback((employeeId: number) => {
     setNavOpen(false)
-    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: true, analytics: false,
+    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: true, analytics: false, administration: false,
       auditQuery: { ...defaultAuditQuery, employee_id: String(employeeId) } }
     locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
   }, [])
@@ -251,7 +268,7 @@ function App() {
   const openAnalytics = useCallback(() => {
     if (!canLeaveForm()) return
     setNavOpen(false)
-    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: false, analytics: true }
+    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: false, analytics: true, administration: false }
     locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
   }, [canLeaveForm])
 
@@ -271,9 +288,16 @@ function App() {
       page: 1, page_size: 20,
     }
     if (kind && group) query[kind] = group.key
-    const next = { ...previous, query, analytics: false, audit: false, employeeId: null, compensationForm: false }
+    const next = { ...previous, query, analytics: false, audit: false, administration: false, employeeId: null, compensationForm: false }
     locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
   }, [])
+
+  const openAdministration = useCallback((section: AdminSection = 'organization') => {
+    if (!canLeaveForm()) return
+    setNavOpen(false)
+    const next = { ...locationRef.current, employeeId: null, compensationForm: false, audit: false, analytics: false, administration: true, adminSection: section }
+    locationRef.current = next; setLocation(next); writeLocation(next); window.scrollTo(0, 0)
+  }, [canLeaveForm])
 
   const openCompensationForm = useCallback(() => {
     setSavedPackageId(null)
@@ -301,7 +325,7 @@ function App() {
 
   return (
     <div className="min-h-svh bg-neutral-50 text-foreground">
-      <aside className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r bg-white transition-[width] duration-200 lg:flex ${sidebarCollapsed ? 'w-[76px]' : 'w-[232px]'}`}><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} audit={location.audit} analytics={location.analytics} user={user} onLogout={onLogout} collapsed={sidebarCollapsed} onToggle={toggleSidebar} /></aside>
+      <aside className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r bg-white transition-[width] duration-200 lg:flex ${sidebarCollapsed ? 'w-[76px]' : 'w-[232px]'}`}><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} onAdministration={openAdministration} audit={location.audit} analytics={location.analytics} administration={location.administration} adminSection={location.adminSection} user={user} onLogout={onLogout} collapsed={sidebarCollapsed} onToggle={toggleSidebar} /></aside>
       <div className={`transition-[padding] duration-200 ${sidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[232px]'}`}>
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
@@ -310,7 +334,7 @@ function App() {
               <ol className="flex min-w-0 items-center gap-2 whitespace-nowrap">
                 <li><button type="button" className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" onClick={openDirectory}>Workspace</button></li>
                 <li aria-hidden="true"><CaretRightIcon size={14} className="text-muted-foreground" /></li>
-                {location.audit || location.analytics ? <li className="truncate font-medium" aria-current="page">{location.audit ? 'Audit log' : 'Analytics'}</li> : <>
+                {location.audit || location.analytics || location.administration ? <li className="truncate font-medium" aria-current="page">{location.audit ? 'Audit log' : location.analytics ? 'Analytics' : sectionsLabel(location.adminSection)}</li> : <>
                   <li>{location.employeeId ? <button type="button" className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" onClick={openDirectory}>Employees</button> : <span aria-current="page" className="font-medium">Employees</span>}</li>
                   {location.employeeId && <><li aria-hidden="true"><CaretRightIcon size={14} className="text-muted-foreground" /></li><li>{location.compensationForm ? <button type="button" className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" onClick={openProfileFromBreadcrumb}>Employee profile</button> : <span aria-current="page" className="font-medium">Employee profile</span>}</li></>}
                   {location.compensationForm && <><li aria-hidden="true"><CaretRightIcon size={14} className="text-muted-foreground" /></li><li className="truncate font-medium" aria-current="page">New package</li></>}
@@ -320,7 +344,7 @@ function App() {
           </div>
         </header>
         <main>
-          {location.audit ? <AuditTrail query={location.auditQuery} onQueryChange={updateAuditQuery} onOpenEmployee={openEmployee} /> : location.analytics ? <Suspense fallback={<p className="px-4 py-8 text-sm text-muted-foreground" role="status">Loading analytics…</p>}><AnalyticsScreen query={location.analyticsQuery} onQueryChange={updateAnalyticsQuery} onViewEmployees={analyticsDrilldown} /></Suspense> : location.employeeId ? location.compensationForm
+          {location.audit ? <AuditTrail query={location.auditQuery} onQueryChange={updateAuditQuery} onOpenEmployee={openEmployee} /> : location.analytics ? <Suspense fallback={<p className="px-4 py-8 text-sm text-muted-foreground" role="status">Loading analytics…</p>}><AnalyticsScreen query={location.analyticsQuery} onQueryChange={updateAnalyticsQuery} onViewEmployees={analyticsDrilldown} /></Suspense> : location.administration ? <AdministrationScreen section={location.adminSection} /> : location.employeeId ? location.compensationForm
             ? <CompensationForm key={location.employeeId} employeeId={location.employeeId} onCancel={closeCompensationForm} onSaved={completeCompensationForm} onDirtyChange={setFormDirty} />
             : <EmployeeProfile key={location.employeeId} employeeId={location.employeeId} savedPackageId={savedPackageId} onRecordCompensation={openCompensationForm} onFullAuditLog={openEmployeeAudit} onBack={openDirectory} onOpenEmployee={openEmployee} />
             : <EmployeeDirectory query={location.query} updateQuery={updateQuery} onOpenEmployee={openEmployee} />}
@@ -329,7 +353,7 @@ function App() {
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetPopup finalFocus={navTrigger} side="left" aria-label="Navigation" className="max-w-[280px]">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <div className="flex min-h-full flex-col"><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} audit={location.audit} analytics={location.analytics} user={user} onLogout={onLogout} /></div>
+          <div className="flex min-h-full flex-col"><NavContents onEmployees={openDirectory} onAnalytics={openAnalytics} onAudit={openAudit} onAdministration={openAdministration} audit={location.audit} analytics={location.analytics} administration={location.administration} adminSection={location.adminSection} user={user} onLogout={onLogout} /></div>
         </SheetPopup>
       </Sheet>
     </div>

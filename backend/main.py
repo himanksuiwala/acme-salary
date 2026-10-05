@@ -10,6 +10,7 @@ from backend.database import connect_database, initialize_database
 from backend.employee_api import router as employee_router
 from backend.audit_api import router as audit_router
 from backend.analytics_api import router as analytics_router
+from backend.admin_api import router as admin_router
 from backend.audit_http import AuditMiddleware
 from backend.auth import auth_config, require_roles, router as auth_router
 
@@ -31,6 +32,7 @@ workspace_access = [Depends(require_roles("ADMIN", "HR"))]
 app.include_router(employee_router, dependencies=workspace_access)
 app.include_router(audit_router, dependencies=workspace_access)
 app.include_router(analytics_router, dependencies=workspace_access)
+app.include_router(admin_router)
 app.include_router(auth_router)
 
 

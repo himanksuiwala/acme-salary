@@ -195,7 +195,7 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_version_five_reinitializes_without_data_loss(self):
         initialize_database()
-        self.assertEqual(self.db.execute("PRAGMA user_version").fetchone()[0], 7)
+        self.assertEqual(self.db.execute("PRAGMA user_version").fetchone()[0], 8)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM employee").fetchone()[0], 5)
 
     def test_version_four_migration_adds_fx_without_touching_salaries(self):
@@ -203,6 +203,6 @@ class AnalyticsTests(unittest.TestCase):
             self.db.execute("DROP TABLE fx_rate")
             self.db.execute("PRAGMA user_version=4")
         initialize_database()
-        self.assertEqual(self.db.execute("PRAGMA user_version").fetchone()[0], 7)
+        self.assertEqual(self.db.execute("PRAGMA user_version").fetchone()[0], 8)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM employee_compensation").fetchone()[0], 4)
         self.assertIsNotNone(self.db.execute("SELECT name FROM sqlite_master WHERE name='fx_rate'").fetchone())

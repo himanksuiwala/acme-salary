@@ -1,4 +1,4 @@
--- Version 7. Dates use YYYY-MM-DD text; monetary amounts use integer minor units.
+-- Version 8. Dates use YYYY-MM-DD text; monetary amounts use integer minor units.
 BEGIN IMMEDIATE;
 
 CREATE TABLE currency (
@@ -99,9 +99,11 @@ CREATE TABLE allowance_type (
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     description TEXT,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX allowance_type_code_ci_idx ON allowance_type(upper(code));
 
 CREATE TABLE employee_allowance (
     id INTEGER PRIMARY KEY,
@@ -187,5 +189,5 @@ CREATE INDEX allowance_type_idx ON employee_allowance(allowance_type_id);
 CREATE INDEX app_user_employee_idx ON app_user(employee_id);
 CREATE INDEX audit_user_idx ON audit_log(user_id);
 
-PRAGMA user_version = 7;
+PRAGMA user_version = 8;
 COMMIT;

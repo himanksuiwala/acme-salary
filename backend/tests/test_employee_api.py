@@ -179,6 +179,75 @@ class EmployeeApiTests(unittest.TestCase):
             "SELECT COUNT(*) FROM audit_log WHERE action = 'EXPORT_COMPLETED' AND entity_type = 'export'"
         ).fetchone()[0], 1)
 
+    def test_allowance_admin_lifecycle_and_read_only_role(self):
+        status, reference = request("GET", "/api/admin/reference-data")
+        self.assertEqual(status, 200)
+        self.assertEqual({item["code"] for item in reference["allowance_types"]}, {"MEAL", "TRANSPORT"})
+        self.assertEqual(len(reference["countries"]), 2)
+        self.assertEqual(len(reference["locations"]), 2)
+        self.assertEqual(len(reference["departments"]), 2)
+        self.assertEqual(len(reference["currencies"]), 2)
+
+        status, created = request("POST", "/api/admin/allowance-types", body={
+            "code": "wellness", "name": "Wellness", "description": "Monthly wellbeing support",
+        })
+        self.assertEqual(status, 201, created)
+        allowance_id = created["allowance_type"]["id"]
+        self.assertEqual(created["allowance_type"]["code"], "WELLNESS")
+        self.assertEqual(request("POST", "/api/admin/allowance-types", body={
+            "code": "WELLNESS", "name": "Duplicate",
+        })[0], 409)
+        status, updated = request("PATCH", f"/api/admin/allowance-types/{allowance_id}", body={
+            "name": "Wellbeing", "description": "Updated description",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(updated["allowance_type"]["name"], "Wellbeing")
+        status, archived = request("POST", f"/api/admin/allowance-types/{allowance_id}/archive",
+                                   body={"reason": "Benefit is no longer offered"})
+        self.assertEqual(status, 200)
+        self.assertEqual(archived["allowance_type"]["status"], "INACTIVE")
+        self.assertNotIn("WELLNESS", {item["code"] for item in request(
+            "GET", "/api/employees/directory-options")[1]["allowance_types"]})
+        self.assertEqual(request("POST", "/api/employees/1/compensation", body=self.new_package(
+            allowances=[{"type_code": "WELLNESS", "amount": 100, "frequency": "MONTHLY"}]
+        ))[0], 422)
+        status, reactivated = request(
+            "POST", f"/api/admin/allowance-types/{allowance_id}/reactivate",
+            body={"reason": "Benefit restored"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(reactivated["allowance_type"]["status"], "ACTIVE")
+        events = self.connection.execute(
+            "SELECT action,reason FROM audit_log WHERE entity_type='allowance_type' ORDER BY audit_id"
+        ).fetchall()
+        self.assertEqual([row[0] for row in events], [
+            "ALLOWANCE_TYPE_CREATED", "ALLOWANCE_TYPE_UPDATED",
+            "ALLOWANCE_TYPE_ARCHIVED", "ALLOWANCE_TYPE_REACTIVATED",
+        ])
+        self.assertEqual(events[-2][1], "Benefit is no longer offered")
+
+        with self.connection:
+            self.connection.execute("UPDATE app_user SET role='HR' WHERE user_id=1")
+        self.assertEqual(request("GET", "/api/admin/reference-data")[0], 200)
+        status, hr_updated = request("PATCH", f"/api/admin/allowance-types/{allowance_id}", body={
+            "name": "Blocked", "description": None,
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(hr_updated["allowance_type"]["name"], "Blocked")
+        status, hr_created = request("POST", "/api/admin/allowance-types", body={
+            "code": "HR_BENEFIT", "name": "HR benefit", "description": None,
+        })
+        self.assertEqual(status, 201)
+        hr_allowance_id = hr_created["allowance_type"]["id"]
+        self.assertEqual(request(
+            "POST", f"/api/admin/allowance-types/{hr_allowance_id}/archive",
+            body={"reason": "HR lifecycle test"},
+        )[1]["allowance_type"]["status"], "INACTIVE")
+        self.assertEqual(request(
+            "POST", f"/api/admin/allowance-types/{hr_allowance_id}/reactivate",
+            body={"reason": "HR lifecycle test complete"},
+        )[1]["allowance_type"]["status"], "ACTIVE")
+
         with self.connection:
             self.connection.execute("UPDATE employee SET first_name = '=2+2' WHERE employee_id = 2")
         _, protected_csv = request("GET", "/api/employees/export", query="search=EMP002", raw=True)

@@ -165,6 +165,17 @@ def _migrate_auth_users(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 7")
 
 
+def _migrate_allowance_types(connection: sqlite3.Connection) -> None:
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(allowance_type)")}
+    if "status" not in columns:
+        connection.execute("""ALTER TABLE allowance_type ADD COLUMN status TEXT NOT NULL
+            DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE'))""")
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS allowance_type_code_ci_idx ON allowance_type(upper(code))"
+    )
+    connection.execute("PRAGMA user_version = 8")
+
+
 def _bootstrap_admin(connection: sqlite3.Connection) -> None:
     display_email = os.getenv("AUTH_BOOTSTRAP_EMAIL", "").strip()
     email = display_email.casefold()
@@ -192,7 +203,7 @@ def initialize_database(path: Path | None = None) -> Path:
     path = path or database_path()
     with closing(connect_database(path)) as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4, 5, 6, 7):
+        if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8):
             raise RuntimeError(f"Unsupported database schema version: {version}")
 
         if version == 0:
@@ -234,6 +245,8 @@ def initialize_database(path: Path | None = None) -> Path:
             _migrate_audit(connection)
             if 0 < version < 7:
                 _migrate_auth_users(connection)
+            if 0 < version < 8:
+                _migrate_allowance_types(connection)
             _bootstrap_admin(connection)
             seed_usd_reference_rates(connection)
 
