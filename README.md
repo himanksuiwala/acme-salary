@@ -10,7 +10,14 @@ The application is deployed at:
 
 https://acme-salary.up.railway.app
 
-Use the HR user ID and password provided for the assignment to sign in. In seeded demo deployments, the bootstrap HR account is commonly configured through `AUTH_BOOTSTRAP_HR_EMAIL` and `AUTH_BOOTSTRAP_HR_PASSWORD`.
+Use the following HR test credentials to sign in:
+
+```text
+User ID: hr@acme.com
+Password: HrSecurePassword2026!
+```
+
+In seeded demo deployments, the bootstrap HR account is commonly configured through `AUTH_BOOTSTRAP_HR_EMAIL` and `AUTH_BOOTSTRAP_HR_PASSWORD`.
 
 ## Product Preview
 

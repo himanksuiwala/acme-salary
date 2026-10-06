@@ -176,7 +176,7 @@ export function AnalyticsScreen({ query, onQueryChange, onViewEmployees }: {
         <MetricCard title="Estimated annual base spend" value={money(data.metrics.base.sum, currency)} detail={`${count(data.metrics.base.included)} included · ${count(data.metrics.base.excluded)} excluded · ${labelDate(query.as_of)} UTC`} partial={data.metrics.base.partial} reasons={data.metrics.base.exclusion_reasons} />
         <MetricCard title="Average base salary" value={money(data.metrics.base.average, currency)} detail="Mean annualized base of included employees" partial={data.metrics.base.partial} reasons={data.metrics.base.exclusion_reasons} />
         <MetricCard title="Median base salary" value={money(data.metrics.base.median, currency)} detail="Middle annualized base value (P50)" partial={data.metrics.base.partial} reasons={data.metrics.base.exclusion_reasons} />
-        <MetricCard title="Target variable pool" value={money(data.metrics.variable.sum, currency)} detail={`${count(data.metrics.variable.included)} included · target, not paid bonus`} />
+        <MetricCard title="Target variable pool" value={money(data.metrics.variable.sum, currency)} detail={`${count(data.metrics.variable.included)} included · target, not paid bonus`} partial={data.metrics.variable.partial} reasons={data.metrics.variable.exclusion_reasons} />
       </section>
       <section aria-labelledby="distribution-title" className="rounded-xl border bg-card p-4 sm:p-5">
         <div className="border-b pb-4"><h2 id="distribution-title" className="text-lg font-semibold">{chartMetricName} distribution</h2><p className="mt-1 text-[13px] text-muted-foreground">USD · {labelDate(query.as_of)} UTC · {count(selected?.included ?? 0)} employees included</p></div>
