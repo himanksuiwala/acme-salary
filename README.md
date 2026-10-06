@@ -1,19 +1,92 @@
-# Employee Salary Management
+# ACME Salary Management
 
-This starter connects a FastAPI backend, a SQLite database, and a Vite React/TypeScript frontend. The [requirements](artifacts/requirements.md) and [database design](artifacts/db-schema-design.md) describe the planned salary-management features. The app includes a live employee directory, employee creation and editing, CSV exports, an as-of compensation profile, and a reviewed versioned-compensation form.
+ACME Salary Management is a secure HR workspace for managing employee compensation across countries, departments, roles, and currencies. It helps HR teams search a large employee directory, inspect current and historical compensation, schedule salary changes, export auditable records, and understand organization-level compensation trends without relying on manual spreadsheets.
 
-The [product UX specification](specs/product-ux-spec.md) describes the target screens, access model, salary and analytics rules, and end-to-end HR workflows. It also identifies which experiences are not yet implemented.
+The product manages compensation commitments, not payroll execution. It does not calculate taxes, generate payslips, run bank transfers, or replace a full HRMS/payroll system.
 
-The [interface design system](design.md) defines the visual and component direction for those screens: Inter, Phosphor icons, shadcn/ui and Coss UI components, and a Tailwind Neutral palette.
+## Live Demo
 
-## Requirements
+The application is deployed at:
+
+https://acme-salary.up.railway.app
+
+Use the HR user ID and password provided for the assignment to sign in. In seeded demo deployments, the bootstrap HR account is commonly configured through `AUTH_BOOTSTRAP_HR_EMAIL` and `AUTH_BOOTSTRAP_HR_PASSWORD`.
+
+## Product Preview
+
+The end-to-end walkthrough is included in the repository artifacts:
+
+![ACME Salary Management walkthrough](artifacts/acme-salary-walkthrough.webp)
+
+The walkthrough demonstrates the core HR flow:
+
+1. Sign in as an HR user.
+2. Search and filter the employee directory.
+3. Open an employee profile.
+4. Review current, scheduled, and historical compensation.
+5. Create or schedule a compensation package.
+6. Inspect analytics, administration data, and audit history.
+7. Export auditable CSV snapshots.
+
+## Core Capabilities
+
+- **Authentication and access:** Email/password sign-in, short-lived JWT sessions, protected application routes, API authorization, visible user identity, and logout.
+- **Employee directory:** Server-side search, filters, pagination, employee cards/tables, active filter state, CSV export, and empty/error/loading states.
+- **Employee profiles:** Identity, employment details, as-of compensation, current package, scheduled package, compensation history, allowances, and recent activity.
+- **Employee maintenance:** Create and edit employee records with validation and audit attribution.
+- **Compensation package workflow:** Add first package or schedule a complete new package with effective dates, base pay, variable pay, allowances, reason, prior-package cutoff, and audit history.
+- **Analytics:** Annualized salary metrics, distribution views, country/department/role breakdowns, compensation-change views, FX notes, exclusions, and CSV export.
+- **Administration:** Allowance type management, read-only reference data for organization structure/currencies/FX, and administrative screens.
+- **Audit trail:** Global and employee-scoped audit views with actor, action, target, timestamp, readable details, filters, and export events.
+
+## Database Design
+
+The application uses SQLite for persistence. Dates are stored as `YYYY-MM-DD`, timestamps are UTC, and monetary values are stored as integer minor units. For example, `125050` represents `1,250.50` for a currency with `decimal_places = 2`.
+
+![ACME Salary Management database design](artifacts/acme-salary_db_design.png)
+
+The main schema groups are:
+
+| Area | Tables | Purpose |
+|---|---|---|
+| Reference data | `currency`, `fx_rate`, `country`, `location`, `department` | Supported currencies, approved FX rates, country defaults, work locations, and departments. |
+| Employees | `employee` | Employee identity, organization placement, manager relationship, employment dates, and status. |
+| Compensation | `employee_compensation`, `allowance_type`, `employee_allowance` | Effective-dated salary packages and package-level allowances. |
+| Access | `app_user` | Application users, password hashes, roles, status, and optional employee linkage. |
+| Audit | `audit_log` | Actor, action, entity, employee association, before/after values, outcome, reason, metadata, and timestamps. |
+
+Important data-design choices:
+
+- Employees can have multiple compensation packages over time.
+- Compensation periods for the same employee cannot overlap.
+- A package can include base pay, optional target variable pay, currency, pay frequency, effective dates, and allowances.
+- Allowance types are configurable and can be activated or archived without losing historical package records.
+- Reference records are protected by foreign keys and are not deleted while dependent data exists.
+- Successful employee, compensation, export, and administration operations are written to the audit log.
+- All application tables include `created_at` and `updated_at` timestamps.
+
+For the source design note, see [artifacts/db-schema-design.md](artifacts/db-schema-design.md). The executable schema is in [backend/schema.sql](backend/schema.sql).
+
+## Architecture
+
+```text
+frontend/   Vite, React, TypeScript, Tailwind, product UI components
+backend/    FastAPI application, SQLite access, auth, APIs, audit, analytics
+artifacts/  Requirements, product UX notes, DB diagram, walkthrough preview
+specs/      Spec Kit feature plans, contracts, and task breakdowns
+```
+
+The production container builds the frontend first, copies the compiled static assets into the backend image, and serves the FastAPI API plus the single-page app from one Railway service.
+
+## Local Setup
+
+### Requirements
 
 - Python 3.12
-- Node.js 22 and npm
+- Node.js 22 or compatible modern Node runtime
+- npm
 
-## Install
-
-From the repository root:
+### Install Dependencies
 
 ```bash
 python3.12 -m venv backend/.venv
@@ -21,143 +94,126 @@ backend/.venv/bin/python -m pip install -r backend/requirements.txt
 npm --prefix frontend ci
 ```
 
-The backend uses `backend/data/app.db` by default. Copy `backend/.env.example` to `backend/.env` and set a random `JWT_SECRET_KEY` of at least 32 bytes plus `JWT_ACCESS_MINUTES` (30 is the suggested value). For a new database, also set `AUTH_BOOTSTRAP_EMAIL` and `AUTH_BOOTSTRAP_PASSWORD` to create the first admin. Relative database paths are resolved from `backend/`. The virtual environment, `.env`, and SQLite database are ignored by Git.
+### Configure Environment
 
-The API initializes a fresh database on startup. To initialize it without starting the API, run:
+The backend uses `backend/data/app.db` by default. For local development, create `backend/.env` and set at least:
+
+```bash
+JWT_SECRET_KEY=<random-secret-at-least-32-bytes>
+JWT_ACCESS_MINUTES=30
+AUTH_BOOTSTRAP_EMAIL=<admin-email>
+AUTH_BOOTSTRAP_PASSWORD=<admin-password>
+```
+
+For Railway/demo-style startup, these variables are also supported:
+
+```bash
+AUTO_SEED=true
+SEED_EMPLOYEES=10000
+AUTH_BOOTSTRAP_HR_EMAIL=<hr-email>
+AUTH_BOOTSTRAP_HR_PASSWORD=<hr-password>
+DB_PATH=/data/app.db
+```
+
+When `AUTO_SEED=true`, startup can generate a synthetic 10,000-employee dataset if the database is empty.
+
+### Initialize Database
 
 ```bash
 backend/.venv/bin/python -m backend.init_db
 ```
 
-Initialization is safe to repeat and migrates existing databases through schema version 7 without removing users or audit records. Existing plaintext passwords are converted to Argon2 hashes and the plaintext column is removed. Existing HR roles become `HR`; the system administrator becomes `ADMIN`. Existing accounts keep their email addresses and passwords. A new database starts with only the environment-configured bootstrap admin; other business tables start empty.
+Database initialization is safe to repeat. It creates or migrates the SQLite schema without removing existing users or audit records.
 
-`POST /auth/login` accepts JSON `{"email":"…","password":"…"}` and returns a short-lived JWT access token. `GET /auth/me` resolves the active account from that token. The frontend keeps the token in tab session storage, sends it as `Authorization: Bearer <token>`, and returns to sign-in on a 401 response or logout. All employee, analytics, export, and audit endpoints require an active `ADMIN` or `HR` account. The `/api/health` endpoint remains public. JWTs contain only a user ID and expiration time; account roles are read from the database on each request.
+### Run Locally
 
-Every table has `created_at` and `updated_at` UTC timestamps. SQLite fills them on insert and refreshes `updated_at` when a row changes.
-
-Monetary fields store integer amounts in the currency's smallest unit. For example, `125050` represents ₹1,250.50 when that currency's `decimal_places` is `2`. Dates use `YYYY-MM-DD`. SQLite enforces foreign keys, unique fields, and non-overlapping compensation periods; referenced records cannot be deleted while dependent records remain.
-
-## Run
-
-Start the API in one terminal:
+Start the API:
 
 ```bash
 backend/.venv/bin/uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Start the web app in another terminal:
+Start the frontend:
 
 ```bash
 npm --prefix frontend run dev
 ```
 
-Open the local URL printed by Vite. The employee directory calls the API through Vite's development proxy. Its filters, pagination, employee details, creation form, and CSV export use live database records. The screen shows an error and retry control when a request fails. FastAPI's interactive API documentation is at <http://127.0.0.1:8000/docs>.
+Open the local URL printed by Vite. API documentation is available at:
 
-Run the database checks with `backend/.venv/bin/python -m unittest discover -s backend/tests -v`.
+http://127.0.0.1:8000/docs
 
-## Employee and compensation API
+## Deployment Setup
 
-The API exposes:
+The app is configured for Railway using:
 
-- `GET /api/employees` with optional `search`, `country`, `department`, `role`, `status`, `package_state`, `page`, and `page_size` query parameters. Search matches partial names and employee codes without case sensitivity. Country and department use codes; `role` means employee job title. Filters combine with AND. Results are ordered by employee code, with 20 items per page by default and a maximum of 100. Each row includes the current base pay, currency, pay frequency, package state, and next effective date when available. Package states are `CURRENT`, `SCHEDULED_CHANGE`, `SCHEDULED`, `PAST_ONLY`, and `NO_PACKAGE`.
-- `GET /api/employees/directory-options` for country, department, location, role, status, package-state, currency, and allowance-type options. Countries include their default currency code.
-- `POST /api/employees` to create a basic employee record. Required fields are code, first and last name, email, department code, location ID, and joining date. The response wraps the created employee summary in `employee`; duplicate codes or emails return 409, while invalid references or payloads return 422. Creation and its audit record commit together.
-- `GET /api/employees/export` accepts the directory filters and returns a CSV of **all matching rows**, not only the displayed page. Current base pay is exported as integer minor units. Text cells are protected against spreadsheet formula execution, and the export writes an audit event.
-- `PATCH /api/employees/{employee_id}` updates supported identity and organization fields and writes an audit event.
-- `GET /api/employees/{employee_id}/compensation` accepts optional `as_of=YYYY-MM-DD` (default: today UTC). It returns the employee summary, package effective on that date, past and scheduled packages with allowances, and recent activity.
-- `GET /api/employees/{employee_id}/compensation/export` accepts optional `as_of` and returns all package versions and allowances as CSV with an audit event. Amounts are integer minor units.
-- `POST /api/employees/{employee_id}/compensation` to create a complete new package with `base_pay`, optional `variable_pay`, `currency_code`, `pay_frequency`, `effective_from`, `reason`, and the full desired `allowances` list. It also accepts optional `change_trigger` (`ANNUAL_MERIT`, `PROMOTION`, `MARKET`, `RETENTION`, `RELOCATION`, or `OTHER`) and `authorization_reference` (at most 120 characters), stored in the audit event and returned with the package. The reference is informational; the API does not verify approval or documents. Amounts are integer minor units. Old pay and allowances remain in history; the prior period is closed if necessary. The write and audit event commit together.
+- [Dockerfile](Dockerfile)
+- [railway.json](railway.json)
+- [start.sh](start.sh)
 
-See the [API contract](specs/001-employee-compensation-api/contracts/employee-compensation-api.md) for request and response shapes and error codes. A quick read example:
+Deployment flow:
 
-```bash
-curl -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8000/api/employees?country=IN&page=1&page_size=20'
-curl -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8000/api/employees/1/compensation'
-```
+1. Railway builds the Docker image from `Dockerfile`.
+2. The Docker build runs `npm ci` and `npm run build` inside `frontend/`.
+3. The built frontend files are copied into the Python runtime image.
+4. Backend dependencies from `backend/requirements.txt` are installed.
+5. `start.sh` initializes/migrates the SQLite database, optionally seeds demo data, optionally creates/updates the HR bootstrap account, and starts Uvicorn.
+6. Uvicorn listens on Railway's `$PORT`.
 
-Authentication and the two application roles are implemented within FastAPI. Authorization currently grants both `ADMIN` and `HR` access to the existing organization-wide workspace; employee self-service and finer scopes are not defined.
-
-The profile shows stored employee, package, and audit facts. Payroll entity, cost center, grade, approval workflow, and historical organization snapshots from the design handoff have no corresponding records or contract yet. The profile therefore omits them. Edit details currently covers identity, employment type, department, location, status, and termination date; manager assignment and formal status-transition rules require separate backend work.
-
-## Audit trail
-
-The **Audit log** navigation opens the global trail with filters, pagination, readable
-before/after comparisons and CSV reports. Employee profiles show a compact **Audit &
-Change Log** card with the four newest events, separate from compensation history and
-the as-of date. **Full audit log** opens the Audit tab filtered by the exact employee ID.
-The scope remains in the URL and applies to reports; remove its filter to see all employees.
-
-- `GET /api/audit/events`: search employee name/code, actor, event ID or operation reference;
-  filter `action`, `actor_id`, `entity_type`, `outcome`, `employee_id`, `from_date`, `to_date`.
-  Dates use `YYYY-MM-DD` and inclusive UTC days. Pagination defaults to 20, maximum 100.
-- `GET /api/audit/options`: recorded actions/target types and real application actors.
-- `GET /api/employees/{employee_id}/audit`: the employee-scoped equivalent.
-- `GET /api/audit/events/export`: all matching events as a formula-safe CSV snapshot.
-
-Schema version 4 preserves legacy events and adds employee association, outcome,
-operation reference, reason, actor snapshot and context. Successful employee and
-compensation audit writes commit with their business changes. Sensitive failures record
-safe explanations without submitted values. Events are retained indefinitely and guarded
-against normal updates/deletes; this is not a cryptographic ledger.
-
-Directory, compensation and audit-report exports record requested and completed stages,
-with operation summaries and affected-employee entries. Completion means the server
-finished sending the response; it does not prove a file was saved or opened. Audit reports
-exclude their own export events from the snapshot. Counts deduplicate export operations.
-
-Technical processes can call the central writer with an explicit active actor name. Migrated databases retain the existing `SYSTEM` audit actor.
-Future imports, account changes and configuration workflows must use this writer; those
-mutation APIs and country scopes are not implemented in this feature.
-See [the audit specification and contract](specs/002-audit-trail/spec.md).
-
-## Spec-driven workflow
-
-This repository is initialized with [Spec Kit](https://github.github.com/spec-kit/) for Codex.
-The shared project rules are in [the constitution](.specify/memory/constitution.md), and
-the agent skills and templates are in `.agents/skills/` and `.specify/`. New contributors
-can install the CLI with `uv tool install specify-cli`, then run `specify version` and
-`specify integration status` from the repository root. The project was initialized
-with Spec Kit 1.0.10. Open a new Codex session in this directory to load its skills.
-
-Stay on the existing Git branch for every feature. Do not create or switch to a
-separate feature branch. Spec Kit keeps each feature's work under its own numbered
-`specs/` directory, so branch changes are unnecessary for this workflow.
-
-For each bounded feature, use these skills in Codex chat, reviewing each artifact
-before moving on:
-
-1. `$speckit-specify` with the requested outcome and compatibility constraints;
-   this creates `specs/<number>-<name>/spec.md`.
-2. `$speckit-clarify` if requirements have material ambiguity.
-3. `$speckit-plan` to design against the existing FastAPI, SQLite, and React code.
-4. `$speckit-tasks`, then `$speckit-analyze` to check the spec, plan, and tasks.
-5. `$speckit-implement`, then `$speckit-converge`; repeat until the change is complete.
-
-The constitution is already established for this project. Use `$speckit-constitution`
-when its principles need an amendment. Specs for future work belong in `specs/`.
-The local `artifacts/` directory is ignored by Git, so put requirements needed by
-other contributors in the relevant feature spec.
-
-## Generate sample data
-
-The seed generator creates 10,000 employees across India, the United States, the United Kingdom, Germany, and Singapore, with 2,000 employees per country. Salary bands depend on country, department, and role. The figures are illustrative synthetic amounts, not compensation benchmarks. Each employee has one prior and one current annual compensation package, and each package has one to three monthly allowances. Existing app users remain; no audit entries are generated for seeded business data.
-
-Run one of these commands from the repository root:
+Recommended Railway variables:
 
 ```bash
-backend/.venv/bin/python -m backend.seed_data --format csv
-backend/.venv/bin/python -m backend.seed_data --format xlsx
-backend/.venv/bin/python -m backend.seed_data --format sqlite
+JWT_SECRET_KEY=<random-secret-at-least-32-bytes>
+JWT_ACCESS_MINUTES=30
+DB_PATH=/data/app.db
+AUTO_SEED=true
+SEED_EMPLOYEES=10000
+AUTH_BOOTSTRAP_HR_EMAIL=<hr-login-email>
+AUTH_BOOTSTRAP_HR_PASSWORD=<hr-login-password>
 ```
 
-CSV creates eight files in `exports/seed-data/`; Excel creates `exports/seed-data.xlsx` with one sheet per generated table. Use `--output PATH` to choose another export destination. SQLite seeds `DB_PATH` (default `backend/data/app.db`); use `--db-path PATH` to target a separate database. SQLite mode stops if any of the eight business tables already contains data. Export paths must not already exist.
+Use a Railway volume mounted at `/data` if the SQLite database should persist across redeploys.
 
-All modes default to Faker seed `42`, 10,000 employees, and an as-of date of `2026-10-01`; use `--seed NUMBER`, `--employees NUMBER`, and `--as-of YYYY-MM-DD` to change them. The minimum employee count is 25 so every country and department is represented. Faker is pinned in `backend/requirements.txt` so the generated records stay reproducible across installs. CSV and Excel use the same explicit IDs and integer minor-unit amounts as SQLite.
+## API Overview
 
-## Project layout
+Protected employee, compensation, analytics, administration, export, and audit endpoints require a valid `ADMIN` or `HR` JWT. `/api/health` remains public.
 
-```text
-backend/   FastAPI app, SQLite schema and initialization, virtual environment
-frontend/  Vite React/TypeScript app with Coss components for the directory
-artifacts/ Requirements and database design
+Common endpoints:
+
+- `POST /auth/login` - sign in and receive an access token.
+- `GET /auth/me` - resolve the active user.
+- `GET /api/employees` - search and filter the employee directory.
+- `POST /api/employees` - create an employee.
+- `PATCH /api/employees/{employee_id}` - update employee details.
+- `GET /api/employees/{employee_id}/compensation` - read as-of compensation context.
+- `POST /api/employees/{employee_id}/compensation` - create a new compensation package.
+- `GET /api/employees/export` - export filtered employee directory data.
+- `GET /api/audit/events` - inspect global audit events.
+- `GET /api/audit/events/export` - export audit history.
+
+API contracts and feature notes live under [specs/](specs/).
+
+## Testing
+
+Run backend tests:
+
+```bash
+backend/.venv/bin/python -m unittest discover -s backend/tests -v
 ```
+
+Run frontend checks:
+
+```bash
+npm --prefix frontend run build
+npm --prefix frontend run lint
+```
+
+## Source Artifacts
+
+The README is based on the assignment artifacts in [artifacts/](artifacts/):
+
+- [requirements.md](artifacts/requirements.md) - product goal, scope, features, and deliberate exclusions.
+- [product-ux-spec.md](artifacts/product-ux-spec.md) - UX flows, screens, product rules, and access expectations.
+- [db-schema-design.md](artifacts/db-schema-design.md) - conceptual database schema.
+- [acme-salary_db_design.png](artifacts/acme-salary_db_design.png) - database design diagram.
+- [acme-salary-walkthrough.webp](artifacts/acme-salary-walkthrough.webp) - end-to-end product preview.

@@ -8,5 +8,4 @@ __pycache__/
 *.db-shm
 *.db-wal
 
-artifacts/
 /exports/
